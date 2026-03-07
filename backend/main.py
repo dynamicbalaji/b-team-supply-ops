@@ -18,6 +18,8 @@ Run locally:
 
 import asyncio
 import uuid
+import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
@@ -38,20 +40,59 @@ from sse import stream_run
 settings = get_settings()
 
 
+# ── Logging setup ───────────────────────────────────────────────────────────────────
+# Call once here so every logger in the entire app (resolveiq.*, uvicorn, etc.)
+# emits to stdout with timestamps.  Safe to call multiple times (idempotent).
+
+def _setup_logging() -> None:
+    fmt = logging.Formatter(
+        fmt="%(asctime)s  %(levelname)-8s  %(name)-28s  %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(fmt)
+    handler.setLevel(logging.DEBUG)
+
+    root = logging.getLogger()
+    if not root.handlers:          # avoid duplicate lines on uvicorn --reload
+        root.addHandler(handler)
+    root.setLevel(logging.DEBUG)
+
+    # Quiet down noisy third-party loggers
+    for noisy in ("httpx", "httpcore", "uvicorn.access", "asyncio", "multipart"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+_setup_logging()
+log = logging.getLogger("resolveiq.main")
+
+
 # ── Lifespan (startup / shutdown) ────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    print("🚀 ResolveIQ backend starting...")
+    log.info("🚀 ResolveIQ backend starting...")
+    from agents.base import active_model_chain
+    chain    = active_model_chain()
     redis_ok = await redis_client.health_check()
+
     if redis_ok:
-        print("✅ Redis connected")
+        log.info("✅ Redis connected")
     else:
-        print("⚠️  Redis unreachable — check .env UPSTASH_REDIS_* values")
+        log.warning("⚠️  Redis unreachable — check .env UPSTASH_REDIS_* values")
+
+    key_set = bool(settings.gemini_api_key and settings.gemini_api_key != "your_gemini_api_key_here")
+    log.info("🤖 Agent mode    : %s",
+             "LIVE (Gemini)" if orchestrator.USE_LIVE_AGENTS else "HARDCODED (Phase 1 fallback)")
+    log.info("🔑 Gemini key    : %s",
+             "SET" if key_set else "NOT SET — agents will emit hardcoded text")
+    log.info("📋 Model chain   : %s",
+             " → ".join(chain) if chain else "(empty — check GEMINI_MODEL_CHAIN in .env)")
+    log.info("⏱️  Timeout/model : %ds  |  Rate-limit retries: %d  |  Backoff: %.1fs",
+             settings.gemini_model_timeout,
+             settings.gemini_rate_limit_retries,
+             settings.gemini_rate_limit_backoff)
     yield
-    # Shutdown
-    print("👋 ResolveIQ backend shutting down")
+    log.info("👋 ResolveIQ backend shutting down")
 
 
 # ── App ──────────────────────────────────────────────────────────────────
@@ -81,15 +122,27 @@ def _run_url(run_id: str, path: str) -> str:
 
 # ── Routes ───────────────────────────────────────────────────────────────
 
-@app.get("/health", response_model=HealthResponse, tags=["System"])
+@app.get("/health", tags=["System"])
 async def health():
-    """Quick health check. Use this to verify Redis is reachable."""
-    redis_ok = await redis_client.health_check()
-    return HealthResponse(
-        status="ok" if redis_ok else "degraded",
-        redis=redis_ok,
-        env=settings.env,
-    )
+    """
+    Health check — shows Redis, Gemini, active model chain, and agent mode.
+
+    model_chain: the ordered list of models that will be tried on each agent call.
+    agent_mode: "live" (real Gemini) or "hardcoded" (Phase 1 fallback).
+    """
+    from agents.base import active_model_chain
+    redis_ok  = await redis_client.health_check()
+    gemini_ok = bool(settings.gemini_api_key and settings.gemini_api_key != "your_gemini_api_key_here")
+    chain     = active_model_chain()
+    return {
+        "status":       "ok" if redis_ok else "degraded",
+        "redis":        redis_ok,
+        "gemini":       gemini_ok,
+        "agent_mode":   "live" if orchestrator.USE_LIVE_AGENTS else "hardcoded",
+        "model_chain":  chain,
+        "model_chain_length": len(chain),
+        "env":          settings.env,
+    }
 
 
 @app.get("/api/scenarios", tags=["Scenarios"])
@@ -126,7 +179,7 @@ async def create_run(body: CreateRunRequest, background_tasks: BackgroundTasks):
     # Kick off the scenario runner as a background task
     # It will publish events to Redis; SSE endpoint drains them to the browser
     background_tasks.add_task(
-        orchestrator.run_hardcoded_scenario, run_id, body.scenario
+        orchestrator.run_scenario, run_id, body.scenario
     )
 
     return RunResponse(
