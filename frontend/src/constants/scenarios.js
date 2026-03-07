@@ -34,7 +34,7 @@ export const SCENARIOS = {
     caseId:  'CD-2024-3341',
     window:  '36h WINDOW',
     origin:  '📦 Shanghai Port',
-    blockedAt: '🟡 LAX Customs',
+    blockedAt: '🟡 Shanghai Customs Hold',
     traditional: '~$120K/72h',
     trad: {
       emails: [
@@ -57,8 +57,8 @@ export const SCENARIOS = {
     crisis: 'cancelled · Supplier bankruptcy · Risk: $5M replacement cost + 90-day delay',
     caseId:  'SB-2024-7712',
     window:  '72h WINDOW',
-    origin:  '🏭 Taiwan Fab',
-    blockedAt: '🔴 Supplier Bankrupt',
+    origin:  '🏭 ChipTech Taiwan',
+    blockedAt: '🔴 ChipTech Bankrupt',
     traditional: '~$280K/90d',
     trad: {
       emails: [
