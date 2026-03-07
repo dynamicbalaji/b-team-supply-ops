@@ -1,33 +1,86 @@
 """
-orchestrator.py
-───────────────
-Run registry and scenario entry points.
+orchestrator.py — Scenario Entry Points & Run Registry
+════════════════════════════════════════════════════════
 
-Live path  (USE_LIVE_AGENTS = True)
-────────────────────────────────────
-Both run_scenario() and run_execution_cascade() delegate to compiled
-LangGraph graphs.  There is no asyncio.gather, asyncio.create_task, or
-hand-written event-loop scheduling in the live path.  The only async
-primitives here are the two `await graph.ainvoke(...)` calls inside
-each entry point.
+ROLE IN LANGGRAPH ARCHITECTURE
+──────────────────────────────
+This module is a thin adapter that:
 
-        run_scenario()            → graph.orchestrator_graph.run_scenario_graph()
-        run_execution_cascade()   → graph.orchestrator_graph.run_execution_cascade_graph()
+  1. Manages the in-memory run registry (primary source of truth)
+  2. Routes requests to LangGraph graphs (live path) or hardcoded replay (demo path)
+  3. Provides two entry points: run_scenario() and run_execution_cascade()
 
-Hardcoded path  (USE_LIVE_AGENTS = False)
-──────────────────────────────────────────
-Used when GEMINI_API_KEY is absent.  The timing-based event emission is
-isolated in the single helper _emit_timed_steps(), which is clearly NOT
-orchestration logic — it is a demo replay mechanism that replays a static
-list of {delay_ms, event} pairs.  All asyncio.sleep calls live inside
-this one function and nowhere else in this module.
+The actual orchestration logic is NOT here — it lives in `graph/orchestrator_graph.py`
+and the five agent subgraphs in `graph/*_agent_graph.py`.
 
-TursoDB shadow writes
-──────────────────────
-_fire_and_forget(coro) wraps asyncio.get_running_loop().create_task() so
-the intent is explicit: "start this DB write in the background and do not
-wait for it."  It appears in two synchronous state-mutating functions
-(create_run, set_run_status) where awaiting would block the caller.
+ZERO ORCHESTRATION LOGIC IN THIS FILE
+──────────────────────────────────────
+There are NO asyncio.gather(), asyncio.sleep(), or task scheduling calls
+that control multi-agent behavior. The only asyncio primitives are:
+
+  • await graph.ainvoke(state)  — delegate entirely to LangGraph
+  • await redis_client.publish() — emit SSE events (simple I/O)
+  • await turso_client.*()       — persist state to TursoDB (fire-and-forget)
+
+Live Path (USE_LIVE_AGENTS = True)
+──────────────────────────────────
+run_scenario()
+    │
+    └─► from graph.orchestrator_graph import run_scenario_graph
+        await run_scenario_graph(run_id, scenario)
+        │
+        └─► [LangGraph _SCENARIO_GRAPH is invoked]
+            phase0_broadcast → round1_logistics → ... → awaiting_approval → END
+            (All edges defined as LangGraph control flow, not asyncio primitives)
+
+run_execution_cascade()
+    │
+    └─► from graph.orchestrator_graph import run_execution_cascade_graph
+        await run_execution_cascade_graph(run_id)
+        │
+        └─► [LangGraph _CASCADE_GRAPH is invoked]
+            exec_phase_transition → exec_logistics_confirm → ... → END
+
+Hardcoded Fallback Path (USE_LIVE_AGENTS = False)
+──────────────────────────────────────────────────
+Used only when Gemini API key is absent or invalid. Replays a static
+event list at recorded timestamps. The timing logic (_emit_timed_steps)
+is isolated so it is obviously NOT orchestration — it is demo replay.
+
+run_scenario()
+    │
+    └─► run_hardcoded_scenario(run_id, scenario)
+        │
+        └─► _emit_timed_steps(run_id, get_hardcoded_steps(scenario))
+            [For each recorded step: await asyncio.sleep(wait), await publish()]
+            This is a media player that emits pre-recorded events, not a scheduler.
+
+run_execution_cascade()
+    │
+    └─► run_hardcoded_cascade(run_id)
+        │
+        └─► _emit_timed_steps(run_id, get_execution_steps())
+            [Same media player logic]
+
+Run Registry
+────────────
+_runs: dict[str, dict]
+  Primary in-memory store. TursoDB receives fire-and-forget async writes
+  via _fire_and_forget(coro), which is NOT orchestration — it is background
+  persistence.
+
+TursoDB Fire-and-Forget Pattern
+────────────────────────────────
+When orchestrator.py mutates _runs state (create_run, set_run_status), it
+also schedules a non-blocking DB write via asyncio.get_running_loop().create_task().
+This is purely for durability, not coordination.
+
+Called by:
+  • create_run() — persist new run to TursoDB
+  • set_run_status() — persist status changes to TursoDB
+
+If no event loop is running (tests, CLI), the writes are silently dropped.
+In-memory dict remains the authoritative source of truth.
 """
 
 import asyncio
@@ -40,40 +93,67 @@ from scenarios import get_hardcoded_steps, get_execution_steps
 
 settings = get_settings()
 
-# ── Feature flag ──────────────────────────────────────────────────────────
-# Set USE_LIVE_AGENTS=true in .env (or ensure GEMINI_API_KEY is set).
+# ─────────────────────────────────────────────────────────────────────────
+# Feature Flag: Live LangGraph vs. Hardcoded Replay
+# ─────────────────────────────────────────────────────────────────────────
+#
+# If Gemini API key is set and not the placeholder, use LangGraph.
+# Otherwise, fall back to Phase 1 hardcoded event replay (demo mode).
+
 USE_LIVE_AGENTS: bool = (
     bool(settings.gemini_api_key)
     and settings.gemini_api_key != "your_gemini_api_key_here"
 )
 
-# ── Run registry — in-memory primary, TursoDB async shadow write ──────────
+
+# ─────────────────────────────────────────────────────────────────────────
+# Run Registry — In-Memory Primary, TursoDB Async Shadow Write
+# ─────────────────────────────────────────────────────────────────────────
+
 _runs: dict[str, dict] = {}
 
 
 def get_run(run_id: str) -> dict | None:
+    """Fetch run state from in-memory registry."""
     return _runs.get(run_id)
 
 
-# ── TursoDB fire-and-forget helper ────────────────────────────────────────
-# Wraps loop.create_task so all background DB writes are clearly labelled.
-# This is NOT orchestration — it is a non-blocking persistence side-effect
-# on every in-memory state mutation.
+# ─────────────────────────────────────────────────────────────────────────
+# TursoDB Fire-and-Forget Helper
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Not orchestration — purely for non-blocking DB persistence.
+# Wraps asyncio.get_running_loop().create_task() so intent is explicit.
 
 def _fire_and_forget(coro) -> None:
-    """Schedule a DB-write coroutine as a background task without awaiting it.
+    """
+    Schedule a database coroutine as a background task without awaiting.
 
-    Used only for TursoDB shadow writes.  If no event loop is running
-    (tests, CLI) the coroutine is silently dropped — the in-memory dict
-    remains the authoritative source of truth.
+    Used only for TursoDB shadow writes of in-memory state mutations.
+    If no event loop is running (tests, CLI), the coroutine is silently
+    dropped — the in-memory dict remains the authoritative source.
+
+    Args:
+        coro: Awaitable (e.g., turso_client.create_run(...))
     """
     try:
         asyncio.get_running_loop().create_task(coro)
     except RuntimeError:
+        # No event loop running; this is fine in tests/CLI
         pass
 
 
 def create_run(run_id: str, scenario: ScenarioType) -> dict:
+    """
+    Create a new run in the in-memory registry and shadow-write to TursoDB.
+
+    Args:
+        run_id: Unique run identifier (UUID string).
+        scenario: ScenarioType enum.
+
+    Returns:
+        The new run dict.
+    """
     mode = "live" if USE_LIVE_AGENTS else "hardcoded"
     run = {
         "run_id":   run_id,
@@ -93,6 +173,13 @@ def create_run(run_id: str, scenario: ScenarioType) -> dict:
 
 
 def set_run_status(run_id: str, status: RunStatus) -> None:
+    """
+    Update run status in the in-memory registry and shadow-write to TursoDB.
+
+    Args:
+        run_id: Run identifier.
+        status: New RunStatus.
+    """
     if run_id in _runs:
         _runs[run_id]["status"] = status
     try:
@@ -103,19 +190,40 @@ def set_run_status(run_id: str, status: RunStatus) -> None:
         pass
 
 
-# ── Demo timing helper (hardcoded path only) ──────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Demo Replay Helper (Hardcoded Path Only)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# MEDIA PLAYER, NOT ORCHESTRATION
+#
 # This is the ONLY place in this module that contains asyncio.sleep.
 # It exists solely to replay a static list of pre-timed events for the
-# demo fallback — it is not orchestration logic.
+# Phase 1 demo fallback — it has nothing to do with agent orchestration,
+# multi-agent coordination, or business logic.
 #
-# It knows nothing about run state, agent coordination, or business rules.
-# Think of it as a media player that replays a recording at its original
-# timestamps.  It is never called when USE_LIVE_AGENTS is True.
+# It knows nothing about run state mutations, agent behavior, or crisis rules.
+# Think of it as pressing play on a recording: wait N milliseconds, emit event.
+#
+# Never called when USE_LIVE_AGENTS is True.
 
 async def _emit_timed_steps(run_id: str, steps: list[dict]) -> None:
-    """Replay a list of {delay_ms, event} pairs to Redis at their recorded times.
+    """
+    Replay a list of {delay_ms, event} pairs to Redis at their recorded times.
 
-    Used by: run_hardcoded_scenario(), run_hardcoded_cascade()
+    This is a media player for the Phase 1 demo fallback. It has no knowledge
+    of orchestration, agent state, or business rules. It simply waits and
+    replays pre-recorded events.
+
+    Args:
+        run_id: Run identifier (used as Redis channel).
+        steps: List of dicts, each with keys:
+            - delay_ms: milliseconds after scenario start
+            - event: dict (SSE event payload)
+
+    Used by:
+        run_hardcoded_scenario()
+        run_hardcoded_cascade()
+
     NOT used when USE_LIVE_AGENTS is True.
     """
     origin = asyncio.get_event_loop().time()
@@ -128,14 +236,26 @@ async def _emit_timed_steps(run_id: str, steps: list[dict]) -> None:
         await redis_client.publish(run_id, step["event"])
 
 
-# ── Scenario entry point ──────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Scenario Entry Point
+# ─────────────────────────────────────────────────────────────────────────
 
 async def run_scenario(run_id: str, scenario: ScenarioType) -> None:
     """
-    Top-level entry point called by background_tasks.add_task() in main.py.
+    Top-level entry point for scenario execution (Phase 1-3).
 
-    Live path:      one await — delegates entirely to the LangGraph graph.
-    Hardcoded path: replays the static event list via _emit_timed_steps().
+    Called by FastAPI background_tasks.add_task() in main.py.
+
+    Live path:      Delegates entirely to LangGraph's _SCENARIO_GRAPH.
+                    One await: await run_scenario_graph(run_id, scenario)
+                    No orchestration code here.
+
+    Hardcoded path: Replays Phase 1 event list via _emit_timed_steps().
+                    Only runs if Gemini API key is absent/invalid.
+
+    Args:
+        run_id: Unique run identifier.
+        scenario: ScenarioType enum.
     """
     set_run_status(run_id, RunStatus.RUNNING)
 
@@ -148,14 +268,25 @@ async def run_scenario(run_id: str, scenario: ScenarioType) -> None:
         await run_hardcoded_scenario(run_id, scenario)
 
 
-# ── Execution cascade (post-approval) ────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Execution Cascade (Post-Approval, Phase 4-5)
+# ─────────────────────────────────────────────────────────────────────────
 
 async def run_execution_cascade(run_id: str) -> None:
     """
-    Background task triggered by POST /api/runs/{run_id}/approve.
+    Execute the post-approval cascade (Phase 4-5).
 
-    Live path:      one await — delegates to the LangGraph cascade graph.
-    Hardcoded path: replays the static execution event list.
+    Called by FastAPI background_tasks.add_task() after POST /api/runs/{run_id}/approve.
+
+    Live path:      Delegates entirely to LangGraph's _CASCADE_GRAPH.
+                    One await: await run_execution_cascade_graph(run_id)
+                    No orchestration code here.
+
+    Hardcoded path: Replays Phase 1 execution event list.
+                    Only runs if Gemini API key is absent/invalid.
+
+    Args:
+        run_id: Unique run identifier.
     """
     set_run_status(run_id, RunStatus.APPROVED)
     started_at = _time.time()
@@ -172,15 +303,34 @@ async def run_execution_cascade(run_id: str) -> None:
     await redis_client.set_run_state(run_id, _runs[run_id])
 
 
-# ── Hardcoded runners (demo fallback — never called when live) ────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Hardcoded Runners (Demo Fallback — Never Called When Live)
+# ─────────────────────────────────────────────────────────────────────────
 
 async def run_hardcoded_scenario(run_id: str, scenario: ScenarioType) -> None:
-    """Replay the hardcoded scenario event list at recorded timestamps."""
+    """
+    Replay Phase 1 scenario event list at recorded timestamps.
+
+    This is only called when Gemini API key is absent/invalid.
+    It replays a pre-recorded event sequence so the frontend UI looks
+    identical to the live Gemini version.
+
+    Args:
+        run_id: Run identifier.
+        scenario: ScenarioType enum.
+    """
     await _emit_timed_steps(run_id, get_hardcoded_steps(scenario))
     set_run_status(run_id, RunStatus.AWAITING_APPROVAL)
     await redis_client.set_run_state(run_id, _runs[run_id])
 
 
 async def run_hardcoded_cascade(run_id: str) -> None:
-    """Replay the hardcoded execution event list at recorded timestamps."""
+    """
+    Replay Phase 1 execution event list at recorded timestamps.
+
+    This is only called when Gemini API key is absent/invalid.
+
+    Args:
+        run_id: Run identifier.
+    """
     await _emit_timed_steps(run_id, get_execution_steps())

@@ -5,3 +5,8 @@ backend/__pycache__
 *.pyc
 frontend/.env.production
 *.pckl
+backend/b_team_supply_ops.egg-info/dependency_links.txt
+backend/b_team_supply_ops.egg-info/PKG-INFO
+backend/b_team_supply_ops.egg-info/requires.txt
+backend/b_team_supply_ops.egg-info/SOURCES.txt
+backend/b_team_supply_ops.egg-info/top_level.txt
