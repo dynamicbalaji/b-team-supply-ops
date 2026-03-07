@@ -2,38 +2,22 @@
 agents/orchestrator_live.py
 ────────────────────────────
 
-Legacy live Gemini orchestrator (pre-LangGraph).
+Shared event-publish helpers used by graph/orchestrator_graph.py:
 
-The orchestration logic in run_live_scenario() has been migrated into a
-LangGraph StateGraph in graph/orchestrator_graph.py. This module is kept
-for reference and for its helper functions:
+    _orc_msg(run_id, text, ts)   — publishes a MessageEvent for the Orchestrator
+    _phase(run_id, phase, status) — publishes a PhaseEvent
+    _map(run_id, status, color)  — publishes a MapUpdateEvent
+    _safe_context_summary(ctx)   — strips non-serialisable values for Redis storage
 
-  - _orc_msg
-  - _phase
-  - _map
-  - _safe_context_summary
-
-run_live_scenario() is no longer called by orchestrator.run_scenario().
-The original docstring is preserved below for historical context:
-
-Replaces run_hardcoded_scenario() with a real multi-agent workflow:
-
-  Round 1 (parallel):  Logistics + Procurement run simultaneously
-  Round 2 (sequential): Finance reads Logistics output → challenges it
-  Round 2b:             Logistics revises after Finance challenge
-  Round 2c:             Finance + Logistics reach consensus
-  Round 3:              Sales negotiates SLA (reads Finance consensus)
-  Round 4:              Risk Agent fires Devil's Advocate AFTER all consensus
-  Round 5:              Finance absorbs risk → proposes final approval
-  Human:                Approval required event published → judge clicks APPROVE
-
-The run_context dict is the shared memory between agents.
-It is NOT persisted in Phase 2 (Phase 3 adds TursoDB).
-
-Timing guardrails:
-  - Each round has a max_wait_seconds before we fall back to a shorter prompt
-  - This prevents Gemini latency from killing the demo pace
-  - Total expected time: 45–90 seconds of real Gemini streaming
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ARCHIVED: _ARCHIVED_run_live_scenario()
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The original hand-written multi-agent orchestration loop (pre-LangGraph)
+is preserved below for historical reference only.  It is never called.
+Its asyncio.gather(logistics, procurement) has been superseded by the
+sequential round1_logistics → round1_procurement LangGraph edge pair in
+graph/orchestrator_graph.py, which expresses the same dependency graph
+without any explicit asyncio coordination.
 """
 
 import asyncio
@@ -84,7 +68,7 @@ async def _map(run_id: str, status: str, color: str, route: str | None = None) -
 
 # ── Main live scenario runner ─────────────────────────────────────────────
 
-async def run_live_scenario(
+async def _ARCHIVED_run_live_scenario(
     run_id: str,
     scenario: ScenarioType,
     set_status_fn,           # orchestrator.set_run_status callback

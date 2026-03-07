@@ -1,15 +1,13 @@
 """
 graph/orchestrator_graph.py
 ───────────────────────────
-Top-level LangGraph orchestrator for live scenarios.
+Two compiled LangGraph graphs that drive the entire live scenario lifecycle.
+All business-logic control flow is expressed as graph edges; there is no
+hand-written asyncio orchestration in this file or its callers.
 
-Each orchestration node calls the corresponding agent subgraph entry point
-directly (run_logistics_agent, run_finance_agent, …) rather than going
-through the legacy agents/<n>.py module.  The agent modules now only
-exist as thin shims that also delegate to the same entry points.
-
-Orchestration flow (pure LangGraph edges — no asyncio.gather between agents)
-──────────────────────────────────────────────────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Graph 1: _SCENARIO_GRAPH  (pre-approval)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   phase0_broadcast
     └─► round1_logistics
           └─► round1_procurement
@@ -20,21 +18,44 @@ Orchestration flow (pure LangGraph edges — no asyncio.gather between agents)
                                         └─► round5_consensus
                                               └─► awaiting_approval → END
 
-Design notes
-────────────
-- round1_logistics and round1_procurement are *separate sequential nodes*
-  rather than a merged parallel node.  This preserves the LangGraph-native
-  edge dependency model.  True fan-out (Send API) can be introduced later
-  without touching any agent graph code.
-- No asyncio.gather / asyncio.sleep appears at the orchestration level.
-  Intra-node parallelism inside a single agent subgraph (e.g. Finance
-  fetching Monte Carlo + customs in one compute node) is allowed.
+Entry point: run_scenario_graph(run_id, scenario)
+Called by:   orchestrator.run_scenario()  (background task from POST /api/runs)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Graph 2: _CASCADE_GRAPH  (post-approval execution)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  exec_phase_transition
+    └─► exec_logistics_confirm
+          └─► exec_sales_notify
+                └─► exec_finance_release
+                      └─► exec_procurement_cancel
+                            └─► exec_complete → END
+
+Entry point: run_execution_cascade_graph(run_id)
+Called by:   orchestrator.run_execution_cascade()  (background task from POST /approve)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+asyncio discipline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+No asyncio.gather / asyncio.sleep / asyncio.create_task appears at the
+orchestration level in this file.  The only concurrency primitive used is
+`await graph.ainvoke(state)` — LangGraph drives the execution schedule.
+
+Intra-node parallelism (e.g. Finance fetching Monte Carlo + customs rates
+simultaneously inside a single node via asyncio.gather) is permitted because
+it is scoped to the computation of a single logical step, not cross-agent
+control flow.
+
+Event emission: every SSE event (TokenEvent, AgentStateEvent, ToolResultEvent,
+MessageEvent, …) is published directly to Redis inside the node that produces
+it, using redis_client.publish().  The SSE endpoint (sse.py) polls Redis
+independently — it has no knowledge of LangGraph and needs no changes.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, TypedDict
 
 from langgraph.graph import StateGraph, END
 
@@ -302,15 +323,168 @@ def _build_orchestrator_graph() -> Any:
 _GRAPH_APP = _build_orchestrator_graph()
 
 
-# ── Public entry point ────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Graph 2: Post-approval execution cascade
+# ─────────────────────────────────────────────────────────────────────────
+# Replaces the manual asyncio.sleep timing loop in orchestrator.run_execution_cascade.
+# Each node publishes one execution-phase event directly to Redis.
+# The cascade state only needs run_id — no agent business logic here.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+
+class _CascadeState(TypedDict, total=False):
+    run_id:     str
+    started_at: float
+
+
+async def _exec_phase_transition(state: _CascadeState) -> _CascadeState:
+    """Mark phase 3 done → phase 4 active; update map to EXECUTING."""
+    run_id = state["run_id"]
+    await _phase(run_id, 3, "done")
+    await _phase(run_id, 4, "active")
+    await _map(run_id, "EXECUTING", "#00e676", "✈ Freight booked → Austin TX")
+    return state
+
+
+async def _exec_logistics_confirm(state: _CascadeState) -> _CascadeState:
+    """Logistics: freight booking confirmation."""
+    from models import ExecutionEvent, AgentStatus, AgentId, AgentStateEvent
+    from agents.base import elapsed as _elapsed
+
+    run_id     = state["run_id"]
+    started_at = state.get("started_at") or time.time()
+
+    await redis_client.publish(run_id, ExecutionEvent(
+        agent=AgentId.LOGISTICS,
+        from_label="✈ LOGISTICS",
+        css_class="al",
+        timestamp=_elapsed(started_at),
+        text="Freight booked: LAX → Austin TX · FX-2024-8891 · ETA 36h",
+    ).model_dump())
+    await publish_state(run_id, AgentId.LOGISTICS, AgentStatus.COMPLETE,
+                        tool="✅ done", confidence=0.88, pulsing=False)
+    return state
+
+
+async def _exec_sales_notify(state: _CascadeState) -> _CascadeState:
+    """Sales: customer notification confirmation."""
+    from models import ExecutionEvent, AgentStatus, AgentId
+    from agents.base import elapsed as _elapsed
+
+    run_id     = state["run_id"]
+    started_at = state.get("started_at") or time.time()
+
+    await redis_client.publish(run_id, ExecutionEvent(
+        agent=AgentId.SALES,
+        from_label="📧 SALES",
+        css_class="as_",
+        timestamp=_elapsed(started_at),
+        text="Apple notified — 36h extension confirmed · Q3 priority allocation logged",
+    ).model_dump())
+    await publish_state(run_id, AgentId.SALES, AgentStatus.COMPLETE,
+                        tool="✅ done", confidence=0.97, pulsing=False)
+    return state
+
+
+async def _exec_finance_release(state: _CascadeState) -> _CascadeState:
+    """Finance: budget release confirmation."""
+    from models import ExecutionEvent, AgentStatus, AgentId
+    from agents.base import elapsed as _elapsed
+
+    run_id     = state["run_id"]
+    started_at = state.get("started_at") or time.time()
+
+    await redis_client.publish(run_id, ExecutionEvent(
+        agent=AgentId.FINANCE,
+        from_label="💰 FINANCE",
+        css_class="af",
+        timestamp=_elapsed(started_at),
+        text="Budget released: $280K · Contingency $20K · PO #F-7741 issued",
+    ).model_dump())
+    await publish_state(run_id, AgentId.FINANCE, AgentStatus.COMPLETE,
+                        tool="✅ done", confidence=0.94, pulsing=False)
+    return state
+
+
+async def _exec_procurement_cancel(state: _CascadeState) -> _CascadeState:
+    """Procurement: cancel spot order, schedule Tucson backup."""
+    from models import ExecutionEvent, AgentStatus, AgentId
+    from agents.base import elapsed as _elapsed
+
+    run_id     = state["run_id"]
+    started_at = state.get("started_at") or time.time()
+
+    await redis_client.publish(run_id, ExecutionEvent(
+        agent=AgentId.PROCUREMENT,
+        from_label="🚫 PROCUREMENT",
+        css_class="ap",
+        timestamp=_elapsed(started_at),
+        text="Dallas spot order cancelled · Tucson backup scheduled for Hour 20",
+    ).model_dump())
+    await publish_state(run_id, AgentId.PROCUREMENT, AgentStatus.COMPLETE,
+                        tool="✅ done", confidence=0.71, pulsing=False)
+    return state
+
+
+async def _exec_complete(state: _CascadeState) -> _CascadeState:
+    """Final cascade node: phase 4 done → DELIVERED map → CompleteEvent."""
+    from models import CompleteEvent
+    from agents.base import elapsed as _elapsed
+
+    run_id     = state["run_id"]
+    started_at = state.get("started_at") or time.time()
+
+    await _phase(run_id, 4, "done")
+    await _map(run_id, "DELIVERED ✅", "#00e676")
+    await redis_client.publish(run_id, CompleteEvent(
+        resolution_time=_elapsed(started_at),
+        cost_usd=280_000,
+        saved_usd=220_000,
+        message_count=9,
+    ).model_dump())
+    return state
+
+
+def _build_cascade_graph():
+    g = StateGraph(_CascadeState)
+
+    g.add_node("exec_phase_transition",  _exec_phase_transition)
+    g.add_node("exec_logistics_confirm", _exec_logistics_confirm)
+    g.add_node("exec_sales_notify",      _exec_sales_notify)
+    g.add_node("exec_finance_release",   _exec_finance_release)
+    g.add_node("exec_procurement_cancel",_exec_procurement_cancel)
+    g.add_node("exec_complete",          _exec_complete)
+
+    g.set_entry_point("exec_phase_transition")
+    g.add_edge("exec_phase_transition",  "exec_logistics_confirm")
+    g.add_edge("exec_logistics_confirm", "exec_sales_notify")
+    g.add_edge("exec_sales_notify",      "exec_finance_release")
+    g.add_edge("exec_finance_release",   "exec_procurement_cancel")
+    g.add_edge("exec_procurement_cancel","exec_complete")
+    g.add_edge("exec_complete",          END)
+
+    return g.compile()
+
+
+_CASCADE_GRAPH = _build_cascade_graph()
+
+
+# ── Public entry points ────────────────────────────────────────────────────
 
 async def run_scenario_graph(
     run_id: str,
     scenario: ScenarioType,
 ) -> RunGraphState:
     """
-    Called by orchestrator.run_scenario() when USE_LIVE_AGENTS is true.
-    Identical signature and return type to the original implementation.
+    Entry point for the pre-approval scenario graph.
+    Called by orchestrator.run_scenario() when USE_LIVE_AGENTS is True.
+
+    The single `await _GRAPH_APP.ainvoke(state)` call is the only
+    concurrency primitive at the orchestration level — LangGraph drives
+    the node-by-node execution schedule.  Every SSE event is published
+    to Redis inside the node that produces it; sse.py polls Redis
+    independently with no knowledge of this graph.
     """
     initial_state: RunGraphState = {
         "run_id":      run_id,
@@ -323,4 +497,21 @@ async def run_scenario_graph(
     return final_state
 
 
-__all__ = ["run_scenario_graph", "RunGraphState"]
+async def run_execution_cascade_graph(run_id: str, started_at: float) -> None:
+    """
+    Entry point for the post-approval execution cascade graph.
+    Called by orchestrator.run_execution_cascade() when USE_LIVE_AGENTS is True.
+
+    Publishes execution-phase events (freight confirmed, customer notified,
+    budget released, etc.) and the final CompleteEvent — all via direct
+    Redis publish inside each node.  No asyncio.sleep timing loops here;
+    the node sequence itself is the execution schedule.
+    """
+    initial: _CascadeState = {
+        "run_id":     run_id,
+        "started_at": started_at,
+    }
+    await _CASCADE_GRAPH.ainvoke(initial)
+
+
+__all__ = ["run_scenario_graph", "run_execution_cascade_graph", "RunGraphState"]

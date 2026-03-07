@@ -1,13 +1,23 @@
 """
 sse.py
 ──────
-Server-Sent Events streaming endpoint.
+Server-Sent Events transport layer.
 
-The SSE generator:
-  1. Polls the run's Redis queue for events
-  2. Formats each event as "data: {json}\n\n"
-  3. Sends keep-alive pings every 15s so browser doesn't close the connection
-  4. Terminates cleanly on run completion or client disconnect
+Responsibility: drain the Redis queue for a run and forward each event
+to the connected browser as an SSE frame.
+
+This module has NO knowledge of LangGraph, agents, or business logic.
+It is a pure transport pipe:
+
+    Redis queue (written by graph nodes via redis_client.publish)
+        └─► _event_generator polls every POLL_INTERVAL seconds
+               └─► yields "data: {...}\n\n" to the browser EventSource
+
+The asyncio.sleep(POLL_INTERVAL) at the bottom of the generator loop is
+an I/O polling interval — not orchestration.  It controls how often we
+check Redis for new events, equivalent to a select() timeout in a
+traditional socket server.  No business logic, no agent coordination,
+and no timing decisions live here.
 
 Browser connects with:
   const es = new EventSource(`/api/stream/${run_id}`);
@@ -21,15 +31,15 @@ from fastapi.responses import StreamingResponse
 import redis_client
 
 
-POLL_INTERVAL  = 0.05   # 50ms polling — snappy without hammering Redis
-KEEPALIVE_SECS = 15     # send ping comment every N seconds
-MAX_EMPTY_POLLS = int(KEEPALIVE_SECS / POLL_INTERVAL)  # before a ping
+POLL_INTERVAL   = 0.05   # 50 ms — snappy without hammering Redis
+KEEPALIVE_SECS  = 15     # send a keep-alive SSE comment every N seconds
+MAX_EMPTY_POLLS = int(KEEPALIVE_SECS / POLL_INTERVAL)
 
 
 async def stream_run(run_id: str, request: Request) -> StreamingResponse:
     """
-    Returns a StreamingResponse that the browser's EventSource reads.
-    Call this from the route handler.
+    Returns a StreamingResponse that the browser EventSource reads.
+    Call this from the route handler; it has no knowledge of run internals.
     """
     return StreamingResponse(
         _event_generator(run_id, request),
@@ -46,26 +56,27 @@ async def _event_generator(run_id: str, request: Request):
     """
     Async generator — yields SSE-formatted strings.
 
-    SSE format:
+    SSE wire format:
         data: {"type": "message", ...}\n\n
-        : ping\n\n          ← keep-alive comment (browser ignores)
+        : ping\n\n          ← keep-alive comment (browsers ignore SSE comments)
+
+    Termination: stops when a {"type": "complete"} event is dequeued, or
+    when the client disconnects.
     """
     empty_poll_count = 0
 
     while True:
-        # ── Check if browser disconnected ────────────────────────────────
+        # ── Disconnect check ─────────────────────────────────────────────
         if await request.is_disconnected():
             break
 
-        # ── Poll Redis for next event ─────────────────────────────────────
+        # ── Dequeue next event from Redis ─────────────────────────────────
         event = await redis_client.pop_event(run_id)
 
         if event is not None:
             empty_poll_count = 0
-            payload = json.dumps(event, ensure_ascii=False)
-            yield f"data: {payload}\n\n"
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-            # ── Terminal event: stop streaming ───────────────────────────
             if event.get("type") == "complete":
                 yield f"data: {json.dumps({'type': 'stream_end'})}\n\n"
                 break
@@ -73,8 +84,8 @@ async def _event_generator(run_id: str, request: Request):
         else:
             empty_poll_count += 1
             if empty_poll_count >= MAX_EMPTY_POLLS:
-                # Send SSE comment (keep-alive) — browser ignores comments
-                yield ": ping\n\n"
+                yield ": ping\n\n"   # SSE comment — keep TCP alive
                 empty_poll_count = 0
 
+        # I/O polling interval — not orchestration
         await asyncio.sleep(POLL_INTERVAL)
