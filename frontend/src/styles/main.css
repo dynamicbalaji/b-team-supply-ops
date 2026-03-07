@@ -1,0 +1,130 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Variables matching the original design */
+:root {
+  --bg: #06090f;
+  --sur: #0c1119;
+  --s2: #111820;
+  --s3: #182030;
+  --bdr: #1d2d40;
+  --b2: #223040;
+  --acc: #00d4ff;
+  --red: #ff3b5c;
+  --orn: #ffb340;
+  --grn: #00e676;
+  --pur: #9b5de5;
+  --t1: #ddeeff;
+  --t2: #7aa0be;
+  --t3: #3d5a72;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--t1);
+  overflow: hidden;
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1d2d40;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Range input styles */
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 3px;
+  background: #1d2d40;
+  border-radius: 2px;
+  outline: none;
+  width: 84px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #00d4ff;
+  cursor: pointer;
+  box-shadow: 0 0 5px #00d4ff;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #00d4ff;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 5px #00d4ff;
+}
+
+/* Animation keyframes */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes fadein {
+  from { 
+    opacity: 0; 
+    transform: translateY(5px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: none; 
+  }
+}
+
+@keyframes bounce {
+  0%, 60%, 100% { 
+    transform: translateY(0); 
+  }
+  30% { 
+    transform: translateY(-5px); 
+  }
+}
+
+/* Utility classes */
+.animate-blink {
+  animation: blink 1.2s infinite;
+}
+
+.animate-fadein {
+  opacity: 0;
+  animation: fadein 0.5s forwards;
+}
+
+.animate-bounce-dots {
+  animation: bounce 1.2s infinite;
+}
+
+/* Canvas styling */
+canvas {
+  display: block;
+}
