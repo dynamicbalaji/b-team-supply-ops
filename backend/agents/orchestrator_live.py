@@ -1,7 +1,20 @@
 """
 agents/orchestrator_live.py
 ────────────────────────────
-Live Gemini orchestrator for Phase 2.
+
+Legacy live Gemini orchestrator (pre-LangGraph).
+
+The orchestration logic in run_live_scenario() has been migrated into a
+LangGraph StateGraph in graph/orchestrator_graph.py. This module is kept
+for reference and for its helper functions:
+
+  - _orc_msg
+  - _phase
+  - _map
+  - _safe_context_summary
+
+run_live_scenario() is no longer called by orchestrator.run_scenario().
+The original docstring is preserved below for historical context:
 
 Replaces run_hardcoded_scenario() with a real multi-agent workflow:
 

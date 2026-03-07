@@ -84,9 +84,11 @@ async def run_scenario(run_id: str, scenario: ScenarioType) -> None:
     set_run_status(run_id, RunStatus.RUNNING)
 
     if USE_LIVE_AGENTS:
-        print(f"🤖 [{run_id[:8]}] Running LIVE Gemini agents for {scenario}")
-        from agents.orchestrator_live import run_live_scenario
-        await run_live_scenario(run_id, scenario, set_run_status)
+        print(f"🤖 [{run_id[:8]}] Running LIVE LangGraph orchestrator for {scenario}")
+        # Import lazily to avoid circular imports at module load time.
+        from graph.orchestrator_graph import run_scenario_graph
+
+        await run_scenario_graph(run_id, scenario)
     else:
         print(f"📜 [{run_id[:8]}] Running HARDCODED scenario for {scenario}")
         await run_hardcoded_scenario(run_id, scenario)
