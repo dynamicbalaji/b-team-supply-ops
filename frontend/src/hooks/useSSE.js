@@ -14,12 +14,12 @@ export function useSSE(onEvent) {
         if (evt === 'ping' || evt.type === 'ping') return // ignore keepalive
         onEvent(evt)
       } catch (err) {
-        console.warn('SSE parse error:', err, e.data)
+        console.warn('[useSSE] parse error:', err.message, '| raw:', e.data?.slice(0, 200))
       }
     }
 
     es.onerror = (err) => {
-      console.warn('SSE error — browser will auto-retry:', err)
+      console.warn('[useSSE] error — state:', es.readyState, err)
     }
 
     esRef.current = es
@@ -27,8 +27,10 @@ export function useSSE(onEvent) {
   }, [onEvent])
 
   const disconnect = useCallback(() => {
-    esRef.current?.close()
-    esRef.current = null
+    if (esRef.current) {
+      esRef.current.close()
+      esRef.current = null
+    }
   }, [])
 
   return { connect, disconnect }

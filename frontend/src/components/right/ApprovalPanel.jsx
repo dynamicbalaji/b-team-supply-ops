@@ -19,7 +19,11 @@ export default function ApprovalPanel({ visible, data, onApprove, onReject }) {
         </div>
 
         <div className="ap-acts">
-          <button className="appbtn" onClick={onApprove}>
+          <button
+            className="appbtn"
+            onClick={onApprove}
+            style={{ animation: 'approvalPulse 2s infinite' }}
+          >
             ✓ APPROVE &amp; EXECUTE
           </button>
           <button className="rejbtn" onClick={onReject}>

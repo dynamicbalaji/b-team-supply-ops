@@ -1,18 +1,10 @@
-import { useState } from 'react'
-
 export default function BottomBar({
   scenario,
   onScenarioChange,
   resolutionTime,
   costSaved,
   msgCount,
-  roiShipments,
-  onRoiChange,
 }) {
-  const shipments     = roiShipments ?? 200
-  // $220K saved per incident × shipments per year
-  const annualSavings = ((220 * shipments) / 1000).toFixed(1)
-
   return (
     <div className="bbar">
 
@@ -20,7 +12,7 @@ export default function BottomBar({
       <div className="metrics">
         <div className="met">
           <span className="mlbl">AI Resolution</span>
-          <span className="mval" style={{ color: resolutionTime ? '#00e676' : undefined }}>
+          <span className="mval" style={{ color: resolutionTime ? '#39d98a' : undefined }}>
             {resolutionTime ?? '—'}
           </span>
         </div>
@@ -30,29 +22,12 @@ export default function BottomBar({
         </div>
         <div className="met">
           <span className="mlbl">Traditional</span>
-          <span className="mval red">72 hrs</span>
+          <span className="mval red">~72 hrs</span>
         </div>
         <div className="met">
           <span className="mlbl">A2A Messages</span>
           <span className="mval">{msgCount ?? 0}</span>
         </div>
-      </div>
-
-      {/* ── Center: ROI slider ── */}
-      <div className="roi-row">
-        <span className="roi-lbl">Shipments/yr:</span>
-        <input
-          type="range"
-          min="50"
-          max="500"
-          value={shipments}
-          onChange={e => onRoiChange?.(+e.target.value)}
-        />
-        <span style={{ minWidth:'28px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#ddeeff' }}>
-          {shipments}
-        </span>
-        <span className="roi-lbl">→ Annual savings:</span>
-        <span className="roi-val">${annualSavings}M/yr</span>
       </div>
 
       {/* ── Right: scenario selector ── */}
