@@ -5,6 +5,7 @@ import LeftPanel    from './components/left/LeftPanel'
 import RightPanel   from './components/right/RightPanel'
 import BottomBar    from './components/BottomBar'
 import { useTicker }                          from './hooks/useTicker'
+import { useTheme }                           from './hooks/useTheme'
 import { useSSE }                             from './hooks/useSSE'
 import { runManualMode, runExecutionCascade } from './utils/manualMode'
 
@@ -48,6 +49,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('map')
   const timerRefs = useRef([])
   const tickerValue = useTicker(state.tickerStart)
+  const { theme, toggle: toggleTheme } = useTheme()
 
   const handleSSEEvent = useCallback((rawEvt) => {
     // Normalize full agent names → short keys for ALL event types
@@ -260,7 +262,8 @@ export default function App() {
   return (
     <>
       <Nav scenario={state.scenario} onScenarioChange={handleScenarioChange}
-        onStartScenario={startScenario} onReset={resetScenario} />
+        onStartScenario={startScenario} onReset={resetScenario}
+        theme={theme} onThemeToggle={toggleTheme} />
       <CrisisBanner scenario={state.scenario} tickerValue={tickerValue} />
       <div className="main">
         <LeftPanel

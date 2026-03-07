@@ -4,7 +4,7 @@ import { SCENARIOS } from '../constants/scenarios'
 
 const API_URL = import.meta.env.VITE_API_URL
 
-export default function Nav({ scenario, onScenarioChange, onStartScenario, onReset }) {
+export default function Nav({ scenario, onScenarioChange, onStartScenario, onReset, theme, onThemeToggle }) {
   const [dropOpen, setDropOpen]           = useState(false)
   const [backendStatus, setBackendStatus] = useState('checking')
   const [statusDetail, setStatusDetail]   = useState('')
@@ -48,6 +48,16 @@ export default function Nav({ scenario, onScenarioChange, onStartScenario, onRes
       </div>
 
       <div className="nav-r">
+        {/* Theme toggle */}
+        <button
+          className="theme-toggle"
+          onClick={onThemeToggle}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label="Toggle theme"
+        >
+          <div className="theme-toggle-knob">{theme === 'dark' ? '🌙' : '☀'}</div>
+        </button>
+
         {/* Dynamic per-scenario pills */}
         <div className="pill">{s.caseId}</div>
         <div className="pill" style={{ color: '#ffb340', borderColor: '#2a3820' }}>{s.window}</div>
