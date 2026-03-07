@@ -1,106 +1,130 @@
-export default function SplitTab() {
+import { SCENARIOS } from '../../constants/scenarios'
+
+const AGENT_COLOR = {
+  log: '#00d4ff', fin: '#39d98a', pro: '#ffb340',
+  sal: '#9b5de5', risk: '#ff3b5c', orc: '#00d4ff',
+}
+const AGENT_LABEL = {
+  log: '🔵 Logistics Agent', fin: '🟢 Finance Agent',
+  pro: '🟠 Procurement Agent', sal: '🟣 Sales Agent',
+  risk: '🔴 Risk Agent', orc: '🎯 Orchestrator',
+}
+const AGENT_BG = {
+  log: 'rgba(0,212,255,.04)',    fin: 'rgba(57,217,138,.04)',
+  pro: 'rgba(255,179,64,.04)',   sal: 'rgba(155,93,229,.04)',
+  risk: 'rgba(255,59,92,.04)',   orc: 'rgba(0,212,255,.04)',
+}
+const AGENT_BORDER = {
+  log: 'rgba(0,212,255,.18)',    fin: 'rgba(57,217,138,.18)',
+  pro: 'rgba(255,179,64,.18)',   sal: 'rgba(155,93,229,.18)',
+  risk: 'rgba(255,59,92,.18)',   orc: 'rgba(0,212,255,.18)',
+}
+
+export default function SplitTab({ scenario, messages, resolutionTime, costSaved }) {
+  const s = SCENARIOS[scenario] || SCENARIOS.port_strike
+
+  // Use live messages if available, otherwise show scenario static summary cards
+  const hasLiveMessages = messages && messages.length > 0
+  // Filter out pure orchestrator broadcast messages for cleaner display
+  const displayMessages = hasLiveMessages
+    ? messages.filter(m => m.agent !== undefined)
+    : []
+
+  const aiTime = resolutionTime || s.ai.resolution
+
   return (
     <div className="split">
-      {/* Traditional process — left */}
+
+      {/* ── Traditional — left ── */}
       <div className="sp trad">
         <div className="sp-hd">
-          <div className="sp-title" style={{ color: '#ff3b5c' }}>📧 Traditional Process</div>
+          <div className="sp-title" style={{ color:'#ff3b5c' }}>📧 Traditional Process</div>
           <div className="sp-time slow">72:00:00</div>
         </div>
 
-        <div className="eml">
-          <div className="er">
-            <span className="efrom">ops.manager@company.com</span>
-            <span className="etime">Day 1, 09:14</span>
+        {s.trad.emails.map((email, i) => (
+          <div className="eml" key={i}>
+            <div className="er">
+              <span className="efrom">{email.from}</span>
+              <span className="etime">{email.time}</span>
+            </div>
+            <div className="esubj">{email.subj}</div>
+            <div className="ebody">{email.body}</div>
           </div>
-          <div className="esubj">RE: Port Strike — Long Beach</div>
-          <div className="ebody">ILWU striking at LB. SC-8891 stuck at port. Need Finance and Procurement on a call ASAP.</div>
-        </div>
+        ))}
 
-        <div className="eml">
-          <div className="er">
-            <span className="efrom">finance.vp@company.com</span>
-            <span className="etime">Day 1, 11:42</span>
-          </div>
-          <div className="esubj">RE: Port Strike</div>
-          <div className="ebody">In back-to-back until 3pm. Bridge call tomorrow? I'll need full cost breakdown before approving anything over $200K.</div>
-        </div>
-
-        <div className="eml">
-          <div className="er">
-            <span className="efrom">procurement.lead@company.com</span>
-            <span className="etime">Day 1, 16:05</span>
-          </div>
-          <div className="esubj">RE: Vendor alternatives?</div>
-          <div className="ebody">Dallas distributor — 80% quantity only. Cert takes 4-6h. Checking Tucson. Will update in the morning.</div>
-        </div>
-
-        <div className="eml">
-          <div className="er">
-            <span className="efrom">sales.director@company.com</span>
-            <span className="etime">Day 2, 09:30</span>
-          </div>
-          <div className="esubj">URGENT: Apple deadline</div>
-          <div className="ebody">Apple offering 36h extension if we guarantee Q3 priority. Need Legal review before I can commit.</div>
-        </div>
-
-        <div className="eml">
-          <div className="er">
-            <span className="efrom">ops.manager@company.com</span>
-            <span className="etime">Day 2, 14:00</span>
-          </div>
-          <div className="esubj">RE: Bridge call — no decision</div>
-          <div className="ebody">45min call, Finance needs more data. Tucson quote still pending. Deferred again.</div>
-        </div>
-
-        <div className="ebar">⏱ 72 HOURS — $2M PENALTY TRIGGERED</div>
+        <div className="ebar">{s.trad.penalty}</div>
       </div>
 
-      {/* ChainGuard AI — right */}
+      {/* ── ChainGuard AI — right ── */}
       <div className="sp ai">
         <div className="sp-hd">
-          <div className="sp-title" style={{ color: '#00e676' }}>🤖 ChainGuard AI</div>
-          <div className="sp-time fast">04:32</div>
+          <div className="sp-title" style={{ color:'#39d98a' }}>🤖 ChainGuard AI</div>
+          <div className="sp-time fast">{aiTime}</div>
         </div>
 
-        <div className="ai-bar">✅ RESOLVED IN 4m 32s — Hybrid Route · $280K · saved $220K</div>
-
-        <div className="eml" style={{ background: 'rgba(0,212,255,.04)', borderColor: 'rgba(0,212,255,.18)' }}>
-          <div className="er">
-            <span className="efrom" style={{ color: '#00d4ff' }}>🔵 Logistics Agent</span>
-            <span className="etime">00:12</span>
+        {/* Summary bar — live data when available */}
+        {(hasLiveMessages || costSaved) && (
+          <div className="ai-bar">
+            ✅ {costSaved
+              ? `RESOLVED IN ${aiTime} — saved ${costSaved}`
+              : s.ai.summary}
           </div>
-          <div className="esubj" style={{ color: '#ddeeff' }}>3 route options generated</div>
-          <div className="ebody" style={{ color: '#7aa0be' }}>Air LAX $450K/24h · Hybrid 60/40 $253K/36h. Recalled Mar 2024 LA strike playbook — hybrid saved $180K.</div>
-        </div>
+        )}
 
-        <div className="eml" style={{ background: 'rgba(0,230,118,.04)', borderColor: 'rgba(0,230,118,.18)' }}>
-          <div className="er">
-            <span className="efrom" style={{ color: '#00e676' }}>🟢 Finance Agent</span>
-            <span className="etime">01:04</span>
-          </div>
-          <div className="esubj" style={{ color: '#ddeeff' }}>Monte Carlo: Hybrid optimal (94% CI, 100 iterations)</div>
-          <div className="ebody" style={{ color: '#7aa0be' }}>Challenged customs assumption. Air revised $450K→$500K. Hybrid saves $220K.</div>
-        </div>
-
-        <div className="eml" style={{ background: 'rgba(155,93,229,.04)', borderColor: 'rgba(155,93,229,.18)' }}>
-          <div className="er">
-            <span className="efrom" style={{ color: '#9b5de5' }}>🟣 Sales Agent</span>
-            <span className="etime">02:18</span>
-          </div>
-          <div className="esubj" style={{ color: '#ddeeff' }}>Apple: 36h extension confirmed, zero penalty</div>
-          <div className="ebody" style={{ color: '#7aa0be' }}>Contract reviewed. Q3 priority allocation accepted. Hybrid timeline fits.</div>
-        </div>
-
-        <div className="eml" style={{ background: 'rgba(255,59,92,.04)', borderColor: 'rgba(255,59,92,.18)' }}>
-          <div className="er">
-            <span className="efrom" style={{ color: '#ff3b5c' }}>🔴 Risk Agent</span>
-            <span className="etime">03:45</span>
-          </div>
-          <div className="esubj" style={{ color: '#ddeeff' }}>⚠ Single point of failure flagged</div>
-          <div className="ebody" style={{ color: '#7aa0be' }}>LAX ground crew unconfirmed during strike. Hour-20 backup trigger added. +$20K contingency.</div>
-        </div>
+        {/* Live messages from scenario run */}
+        {displayMessages.length > 0 ? (
+          displayMessages.map(msg => (
+            <div
+              key={msg.id}
+              className="eml"
+              style={{
+                background:   AGENT_BG[msg.agent]     || 'rgba(0,212,255,.04)',
+                borderColor:  AGENT_BORDER[msg.agent] || 'rgba(0,212,255,.18)',
+              }}
+            >
+              <div className="er">
+                <span className="efrom" style={{ color: AGENT_COLOR[msg.agent] || '#00d4ff' }}>
+                  {AGENT_LABEL[msg.agent] || msg.from || msg.agent}
+                </span>
+                <span className="etime">{msg.time}</span>
+              </div>
+              {/* First sentence as subject, rest as body */}
+              {(() => {
+                const clean = msg.text.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')
+                const dotIdx = clean.search(/[.!?]/)
+                const subj = dotIdx > 0 && dotIdx < 80 ? clean.slice(0, dotIdx + 1) : clean.slice(0, 60)
+                const body = dotIdx > 0 && dotIdx < 80 ? clean.slice(dotIdx + 1).trim() : clean.slice(60).trim()
+                return (
+                  <>
+                    <div className="esubj" style={{ color:'#ddeeff' }}>{subj}</div>
+                    {body && <div className="ebody" style={{ color:'#7aa0be' }}>{body}</div>}
+                  </>
+                )
+              })()}
+              {msg.tools?.length > 0 && (
+                <div style={{ marginTop:'4px', display:'flex', flexWrap:'wrap', gap:'3px' }}>
+                  {msg.tools.map((t, i) => (
+                    <span key={i} className="tool-pill">{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          /* Static placeholder cards before scenario runs */
+          <>
+            <div className="eml" style={{ background:'rgba(0,212,255,.04)', borderColor:'rgba(0,212,255,.18)', opacity:.5 }}>
+              <div className="er">
+                <span className="efrom" style={{ color:'#00d4ff' }}>🔵 Logistics Agent</span>
+                <span className="etime">--:--</span>
+              </div>
+              <div className="esubj" style={{ color:'#3d5a72' }}>Awaiting scenario start…</div>
+            </div>
+          </>
+        )}
       </div>
+
     </div>
   )
 }
