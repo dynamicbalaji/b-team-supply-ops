@@ -1,3 +1,5 @@
+import { SCENARIOS } from '../constants/scenarios'
+
 export default function BottomBar({
   scenario,
   onScenarioChange,
@@ -5,6 +7,8 @@ export default function BottomBar({
   costSaved,
   msgCount,
 }) {
+  const s = SCENARIOS[scenario] || SCENARIOS.port_strike
+
   return (
     <div className="bbar">
 
@@ -22,7 +26,7 @@ export default function BottomBar({
         </div>
         <div className="met">
           <span className="mlbl">Traditional</span>
-          <span className="mval red">~72 hrs</span>
+          <span className="mval red">{s.tradTime}</span>
         </div>
         <div className="met">
           <span className="mlbl">A2A Messages</span>
@@ -41,7 +45,7 @@ export default function BottomBar({
           onChange={e => onScenarioChange(e.target.value)}
         >
           <option value="port_strike">🔴 Port Strike (Long Beach)</option>
-          <option value="customs_delay">🟡 Customs Delay (China)</option>
+          <option value="customs_delay">🟡 Customs Delay (Shanghai)</option>
           <option value="supplier_breach">🟠 Supplier Bankruptcy</option>
         </select>
       </div>

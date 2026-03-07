@@ -48,7 +48,7 @@ export default function App() {
   const [state,     setState]     = useState(INITIAL_STATE)
   const [activeTab, setActiveTab] = useState('map')
   const timerRefs = useRef([])
-  const tickerValue = useTicker(state.tickerStart)
+  const tickerValue = useTicker(state.tickerStart, state.isApproved)
   const { theme, toggle: toggleTheme } = useTheme()
 
   const handleSSEEvent = useCallback((rawEvt) => {
