@@ -45,13 +45,18 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--t1);display:
 .dbtn2:hover{color:#7aa0be;}
 
 /* ── CRISIS BANNER ── */
-.crisis{height:46px;flex-shrink:0;background:#140609;border-bottom:2px solid rgba(255,59,92,.55);
+.crisis{height:46px;flex-shrink:0;
+  background:linear-gradient(90deg,#1c0408 0%,#130508 55%,#0c0f14 100%);
+  border-bottom:2px solid rgba(255,59,92,.65);
+  box-shadow:0 3px 24px rgba(255,59,92,.18);
   display:flex;align-items:center;justify-content:space-between;padding:0 18px;}
-.cbadge{background:#ff3b5c;color:#fff;font-size:9px;font-weight:700;padding:2px 8px;
-  border-radius:3px;letter-spacing:1px;flex-shrink:0;}
-.ctxt{font-size:12px;font-weight:600;color:#ffd4dc;margin-left:10px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ctxt b{color:#fff;}
+.cbadge{background:#ff3b5c;color:#fff;font-size:9px;font-weight:800;padding:3px 10px;
+  border-radius:3px;letter-spacing:1.5px;flex-shrink:0;font-family:'JetBrains Mono',monospace;
+  box-shadow:0 0 14px rgba(255,59,92,.55);text-transform:uppercase;}
+.ctxt{font-size:12px;font-weight:400;color:#f5c0c8;margin-left:12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.1px;line-height:1;}
+.ctxt b{color:#ffffff;font-weight:700;font-family:'JetBrains Mono',monospace;}
 .ticker-wrap{text-align:right;flex-shrink:0;margin-left:16px;}
 .ticker-lbl{font-size:9px;color:#3d5a72;text-transform:uppercase;letter-spacing:1px;font-family:'JetBrains Mono',monospace;}
 .ticker-val{font-size:19px;font-weight:700;color:#ff3b5c;font-family:'JetBrains Mono',monospace;}
@@ -289,3 +294,28 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 /* ── REACT ADDITIONS ── */
 #root { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 @keyframes cursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ── LEAFLET OVERRIDES ── */
+/* Keep map-bar and phase-bar above Leaflet tiles */
+.mapwrap .map-bar  { z-index: 900; }
+.mapwrap .phase-bar{ z-index: 900; }
+/* Match Leaflet background to app theme */
+.leaflet-container { background: #06090f !important; font-family: 'Syne', sans-serif; }
+/* Dramatic darkening + cyan tint to match the UI */
+.leaflet-tile-pane { filter: brightness(0.55) saturate(0.4) hue-rotate(180deg) invert(0.05); }
+/* Hide Leaflet attribution */
+.leaflet-control-attribution { display: none !important; }
+/* Zoom control dark theme */
+.leaflet-control-zoom { border: 1px solid #1d2d40 !important; border-radius: 6px !important; overflow: hidden; }
+.leaflet-control-zoom a {
+  background: #0c1119 !important;
+  color: #7aa0be !important;
+  border-color: #1d2d40 !important;
+  font-weight: 700;
+}
+.leaflet-control-zoom a:hover {
+  background: #111820 !important;
+  color: #00d4ff !important;
+}
+/* Force map pane bg */
+.leaflet-map-pane { background: #06090f; }

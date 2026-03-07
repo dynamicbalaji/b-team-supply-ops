@@ -1,7 +1,15 @@
 import { useState } from 'react'
 
-export default function BottomBar({ scenario, onScenarioChange }) {
-  const [shipments, setShipments] = useState(200)
+export default function BottomBar({
+  scenario,
+  onScenarioChange,
+  resolutionTime,
+  costSaved,
+  msgCount,
+  roiShipments,
+  onRoiChange,
+}) {
+  const shipments    = roiShipments ?? 200
   const annualSavings = ((220 * shipments) / 1000).toFixed(1)
 
   return (
@@ -10,11 +18,11 @@ export default function BottomBar({ scenario, onScenarioChange }) {
       <div className="metrics">
         <div className="met">
           <span className="mlbl">Resolution</span>
-          <span className="mval">—</span>
+          <span className="mval">{resolutionTime ?? '—'}</span>
         </div>
         <div className="met">
           <span className="mlbl">Cost Saved</span>
-          <span className="mval ok">—</span>
+          <span className="mval ok">{costSaved ?? '—'}</span>
         </div>
         <div className="met">
           <span className="mlbl">Traditional</span>
@@ -22,7 +30,7 @@ export default function BottomBar({ scenario, onScenarioChange }) {
         </div>
         <div className="met">
           <span className="mlbl">Messages</span>
-          <span className="mval">0</span>
+          <span className="mval">{msgCount ?? 0}</span>
         </div>
       </div>
 
@@ -34,7 +42,7 @@ export default function BottomBar({ scenario, onScenarioChange }) {
           min="50"
           max="500"
           value={shipments}
-          onChange={e => setShipments(+e.target.value)}
+          onChange={e => onRoiChange?.(+e.target.value)}
         />
         <span
           className="roi-lbl"

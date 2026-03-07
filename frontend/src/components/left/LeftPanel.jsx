@@ -10,7 +10,18 @@ const TABS = [
   { id: 'audit',    label: '📋 Audit Trail' },
 ]
 
-export default function LeftPanel({ activeTab, onTabChange }) {
+export default function LeftPanel({
+  activeTab,
+  onTabChange,
+  // Map props
+  scenario,
+  mapRoute,
+  mapStatus,
+  mapStatusColor,
+  truckPhase,
+  onTruckPhaseChange,
+  phase,
+}) {
   return (
     <div className="left">
       {/* Tab bar */}
@@ -28,7 +39,16 @@ export default function LeftPanel({ activeTab, onTabChange }) {
 
       {/* Tab panes */}
       <div className={`tpane${activeTab === 'map' ? ' on' : ''}`}>
-        <MapTab isActive={activeTab === 'map'} />
+        <MapTab
+          scenario={scenario}
+          mapRoute={mapRoute}
+          mapStatus={mapStatus}
+          mapStatusColor={mapStatusColor}
+          truckPhase={truckPhase}
+          onTruckPhaseChange={onTruckPhaseChange}
+          phase={phase}
+          isActive={activeTab === 'map'}
+        />
       </div>
 
       <div className={`tpane${activeTab === 'split' ? ' on' : ''}`}>

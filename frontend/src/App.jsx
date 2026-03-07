@@ -1,20 +1,77 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import Nav from './components/Nav'
 import CrisisBanner from './components/CrisisBanner'
 import LeftPanel from './components/left/LeftPanel'
 import RightPanel from './components/right/RightPanel'
 import BottomBar from './components/BottomBar'
+import { useTicker } from './hooks/useTicker'
 
+// ─── Global initial state ────────────────────────────────────────────────────
+const INITIAL_STATE = {
+  // Run
+  runId: null,
+  scenario: 'port_strike',
+  isRunning: false,
+  isApproved: false,
+  phase: 0,          // 0–4 maps to phase strip
+  tickerStart: null,
+
+  // Agents (keyed by id)
+  agents: {
+    log: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
+    fin: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
+    pro: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
+    sal: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
+  },
+  riskAgent: { visible: false, text: '' },
+
+  // Chat
+  messages: [],
+
+  // Map
+  mapRoute: '— Awaiting agents',
+  mapStatus: 'STANDBY',
+  mapStatusColor: '#ffb340',
+  truckPhase: 'blocked',   // 'blocked' | 'flying' | 'driving' | 'arrived'
+
+  // Decision tab
+  mcDistribution: null,
+  mcStats: { mean: 280000, p10: 241000, p90: 318000, ci: 0.94 },
+
+  // Approval
+  approvalVisible: false,
+  approvalData: null,
+
+  // Audit
+  auditItems: [],
+
+  // Metrics
+  resolutionTime: null,
+  costSaved: null,
+  roiShipments: 200,
+}
+
+// ─── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [state, setState] = useState(INITIAL_STATE)
   const [activeTab, setActiveTab] = useState('map')
-  const [scenario, setScenario] = useState('port_strike')
+
+  // Live cost ticker — only runs when scenario is active
+  const tickerValue = useTicker(state.tickerStart)
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  function handleScenarioChange(scenario) {
+    setState(prev => ({ ...prev, scenario }))
+  }
 
   function handleStartScenario() {
-    // No-op in Phase 1 — wired in Phase 4
+    // No-op in Phase 2 — wired fully in Phase 4
   }
 
   function handleReset() {
-    window.location.reload()
+    setState(INITIAL_STATE)
+    setActiveTab('map')
   }
 
   function handleManualScript() {
@@ -31,21 +88,69 @@ export default function App() {
     )
   }
 
+  // Stable callback so useMapCanvas doesn't restart animation loop on every render
+  const handleTruckPhaseChange = useCallback((newPhase) => {
+    setState(prev => ({ ...prev, truckPhase: newPhase }))
+  }, [])
+
+  function handleApprove() {
+    setState(prev => ({ ...prev, approvalVisible: false, isApproved: true }))
+  }
+
+  function handleReject() {
+    setState(prev => ({ ...prev, approvalVisible: false }))
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
       <Nav
-        scenario={scenario}
-        onScenarioChange={setScenario}
+        scenario={state.scenario}
+        onScenarioChange={handleScenarioChange}
         onStartScenario={handleStartScenario}
         onReset={handleReset}
         onManualScript={handleManualScript}
       />
-      <CrisisBanner scenario={scenario} tickerValue={0} />
+
+      <CrisisBanner
+        scenario={state.scenario}
+        tickerValue={tickerValue}
+      />
+
       <div className="main">
-        <LeftPanel activeTab={activeTab} onTabChange={setActiveTab} />
-        <RightPanel />
+        <LeftPanel
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          // Map props
+          scenario={state.scenario}
+          mapRoute={state.mapRoute}
+          mapStatus={state.mapStatus}
+          mapStatusColor={state.mapStatusColor}
+          truckPhase={state.truckPhase}
+          onTruckPhaseChange={handleTruckPhaseChange}
+          phase={state.phase}
+        />
+
+        <RightPanel
+          agents={state.agents}
+          riskAgent={state.riskAgent}
+          messages={state.messages}
+          approvalVisible={state.approvalVisible}
+          approvalData={state.approvalData}
+          onApprove={handleApprove}
+          onReject={handleReject}
+        />
       </div>
-      <BottomBar scenario={scenario} onScenarioChange={setScenario} />
+
+      <BottomBar
+        scenario={state.scenario}
+        onScenarioChange={handleScenarioChange}
+        resolutionTime={state.resolutionTime}
+        costSaved={state.costSaved}
+        msgCount={state.messages.length}
+        roiShipments={state.roiShipments}
+        onRoiChange={(v) => setState(prev => ({ ...prev, roiShipments: v }))}
+      />
     </>
   )
 }

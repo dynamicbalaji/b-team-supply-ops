@@ -1,7 +1,33 @@
-export default function MapTab({ isActive }) {
+import { useRef, useCallback } from 'react'
+import { useLeafletMap } from '../../hooks/useLeafletMap'
+import PhaseStrip from './PhaseStrip'
+
+export default function MapTab({
+  scenario,
+  mapRoute,
+  mapStatus,
+  mapStatusColor,
+  truckPhase,
+  onTruckPhaseChange,
+  phase,
+  isActive,
+}) {
+  const containerRef = useRef(null)
+
+  const handleTruckPhaseChange = useCallback(
+    (newPhase) => onTruckPhaseChange(newPhase),
+    [onTruckPhaseChange]
+  )
+
+  useLeafletMap(containerRef, {
+    scenario,
+    truckPhase,
+    onTruckPhaseChange: handleTruckPhaseChange,
+    isActive,
+  })
+
   return (
     <div className="mapwrap">
-      {/* Map info bar */}
       <div className="map-bar">
         <div className="mbi">
           <div className="mbi-lbl">Origin</div>
@@ -13,50 +39,20 @@ export default function MapTab({ isActive }) {
         </div>
         <div className="mbi">
           <div className="mbi-lbl">Active Route</div>
-          <div className="mbi-val" style={{ color: '#00d4ff' }}>— Awaiting agents</div>
+          <div className="mbi-val" style={{ color: '#00d4ff' }}>{mapRoute}</div>
         </div>
         <div className="mbi">
           <div className="mbi-lbl">Status</div>
-          <div className="mbi-val" style={{ color: '#ffb340' }}>STANDBY</div>
+          <div className="mbi-val" style={{ color: mapStatusColor }}>{mapStatus}</div>
         </div>
       </div>
 
-      {/* Canvas — will be animated in Phase 2 */}
-      <canvas
-        id="mapCanvas"
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+      <div
+        ref={containerRef}
+        style={{ position: 'absolute', top: '46px', bottom: '36px', left: 0, right: 0, zIndex: 1 }}
       />
 
-      {/* Phase strip */}
-      <div className="phase-bar">
-        <div className="ph-lbl">Phase</div>
-        <div className="phases">
-          <div className="ph" id="ph0">
-            <div className="pi" />
-            Crisis Detected
-          </div>
-          <div className="ph-arrow">→</div>
-          <div className="ph" id="ph1">
-            <div className="pi" />
-            Agents Active
-          </div>
-          <div className="ph-arrow">→</div>
-          <div className="ph" id="ph2">
-            <div className="pi" />
-            Negotiating
-          </div>
-          <div className="ph-arrow">→</div>
-          <div className="ph" id="ph3">
-            <div className="pi" />
-            Approved
-          </div>
-          <div className="ph-arrow">→</div>
-          <div className="ph" id="ph4">
-            <div className="pi" />
-            Executing
-          </div>
-        </div>
-      </div>
+      <PhaseStrip currentPhase={phase} />
     </div>
   )
 }
