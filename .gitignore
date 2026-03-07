@@ -1,5 +1,7 @@
 backend/.env
 /backend/venv
+/backend/langgraph-env
 backend/__pycache__
 *.pyc
 frontend/.env.production
+*.pckl

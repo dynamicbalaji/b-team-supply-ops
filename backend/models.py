@@ -7,7 +7,7 @@ when wiring the frontend.
 """
 
 from __future__ import annotations
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
@@ -187,6 +187,73 @@ class ErrorEvent(BaseModel):
 
 class PingEvent(BaseModel):
     type: Literal["ping"] = "ping"
+
+
+# ── A2A Task models (§4.1 A2A Protocol Specification v0.3.0) ─────────────
+#
+# A2ATaskRequest  — body for POST /agents/{name}/tasks
+# A2ATaskResult   — response from that endpoint
+#
+# Field mapping to the A2A spec:
+#   task            ≈  skill id from the agent's AgentCard
+#   inputs          ≈  message parts (structured JSON rather than free text)
+#   conversation_id ≈  contextId  — groups multi-turn interactions
+#   metadata        ≈  SendMessageConfiguration.metadata
+#
+#   status          ≈  TaskState  (submitted/working/completed/failed)
+#   task_id         ≈  Task.id
+#   outputs         ≈  Task artifacts (structured agent answer)
+#   messages        ≈  Message list (agent's natural-language explanation)
+#   error           ≈  TaskStatus.message when state=failed
+
+class A2ATaskRequest(BaseModel):
+    """
+    Request body for POST /agents/{agent_name}/tasks.
+
+    task            : Skill id to invoke (e.g. "check_freight", "run_monte_carlo").
+                      Falls back to the agent's default skill if omitted or unknown.
+    inputs          : Arbitrary JSON passed to the skill.  Common keys:
+                        scenario         — "port_strike" | "customs_delay" | "supplier_breach"
+                        base_cost_usd    — override base cost for Monte Carlo
+                        hybrid_cost_usd  — upstream logistics cost for finance / risk
+                        challenge        — Finance challenge text for logistics revise_route
+                        customs_surcharge— int USD for logistics revise_route
+                        reserve_usd      — contingency reserve for finance propose_consensus
+                        query            — free-text for logistics recall_memory
+                        location_hint    — location string for procurement query_suppliers
+                        logistics        — full logistics output dict (upstream context)
+                        finance          — full finance output dict (upstream context)
+    conversation_id : Optional contextId grouping multi-turn calls (stored in metadata).
+    metadata        : Arbitrary caller metadata (forwarded into task result unchanged).
+    """
+    task:            str            = "evaluate_crisis"
+    inputs:          dict[str, Any] = Field(default_factory=dict)
+    conversation_id: Optional[str]  = None
+    metadata:        Optional[dict[str, Any]] = None
+
+
+class A2ATaskResult(BaseModel):
+    """
+    Response shape for POST /agents/{agent_name}/tasks.
+
+    status    : "completed" | "failed"  (A2A TaskState values)
+    task_id   : UUID identifying this invocation (use in GET /api/stream/{task_id}
+                to receive SSE token events if the client wants streaming).
+    agent     : Which agent handled the task.
+    task      : The resolved skill name that was executed.
+    outputs   : Structured agent answer (agent-specific schema, see AgentCard skills).
+    messages  : Natural-language explanation from the agent (one string per turn).
+    error     : Non-null only when status="failed".
+    metadata  : Echo of caller metadata + internal timing/scenario fields.
+    """
+    status:   Literal["completed", "failed"]
+    task_id:  str
+    agent:    str
+    task:     str
+    outputs:  dict[str, Any]         = Field(default_factory=dict)
+    messages: list[str]              = Field(default_factory=list)
+    error:    Optional[str]          = None
+    metadata: dict[str, Any]         = Field(default_factory=dict)
 
 
 # ── Health check ─────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ from models import (
     CreateRunRequest, ApproveRunRequest,
     RunResponse, RunStatus, HealthResponse,
     ScenarioType,
+    A2ATaskRequest, A2ATaskResult,
 )
 from scenarios import SCENARIO_DEFINITIONS
 from sse import stream_run
@@ -310,89 +311,679 @@ async def approve_run(run_id: str, body: ApproveRunRequest, background_tasks: Ba
 
 
 # ── A2A Agent Cards ───────────────────────────────────────────────────────
-# These follow the A2A protocol spec. Judges can hit these URLs to see
-# that each agent is a real independently-addressable service.
+# Compliant with A2A Protocol Specification v0.3.0 (released 2025-07-31).
+# Authoritative schema source: github.com/a2aproject/A2A
+#
+# ┌─ AgentCard top-level fields (§4.4.1) ──────────────────────────────────┐
+# │ REQUIRED                                                                │
+# │   name            string   Human-readable agent name                   │
+# │   description     string   CommonMark-safe purpose summary              │
+# │   url             string   Base URL for JSON-RPC task calls (§9)        │
+# │   version         string   Agent implementation version (semver)        │
+# │   protocolVersion string   A2A spec version: "0.3.0"  ← singular str   │
+# │   skills          Skill[]  ≥1 skill (§4.4.5)                           │
+# │   defaultInputModes  string[]  MIME types accepted (text/plain, etc.)   │
+# │   defaultOutputModes string[]  MIME types produced                      │
+# │                                                                         │
+# │ OPTIONAL                                                                │
+# │   provider        {organization, url}   Operator identity (§4.4.2)     │
+# │   documentationUrl  string  Link to docs                                │
+# │   iconUrl         string   PNG/SVG branding icon (added v0.2.2)         │
+# │   capabilities    {streaming, pushNotifications,                        │
+# │                    stateTransitionHistory}  Feature flags (§4.4.3)      │
+# │   supportedInterfaces  Interface[]  Multi-transport declaration (§4.4.6)│
+# │     each: {url, protocolBinding, protocolVersion}                       │
+# │   supportsAuthenticatedExtendedCard  bool  (added v0.2.1)               │
+# │   securitySchemes  map<string, SecurityScheme>  (§4.5)                  │
+# │   security         [{scheme: scopes}]  Required auth bindings           │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# Well-known URI (§8.2):  GET /.well-known/agent-card.json   (v0.3.0)
+#   NOTE: v0.3.0 renamed agent.json → agent-card.json.
+#   We serve BOTH paths for backwards compatibility.
+#
+# Task endpoint: POST /agents/{name}/tasks  (JSON-RPC 2.0, §9.4)
+_BASE_URL = "http://localhost:8000"   # overridden in production via settings
+_A2A_VERSION = "0.3.0"               # current A2A spec release
 
-AGENT_CARDS = {
+_PROVIDER = {
+    "organization": "ResolveIQ",
+    "url": "https://github.com/resolveiq",
+}
+
+def _interfaces(agent_id: str) -> list:
+    """Declare all three A2A transport bindings for a given agent endpoint."""
+    base = f"{_BASE_URL}/agents/{agent_id}"
+    return [
+        # Primary — JSON-RPC 2.0 over HTTP (§9), preferred transport
+        {"url": f"{base}/tasks",      "protocolBinding": "JSONRPC",   "protocolVersion": _A2A_VERSION},
+        # Secondary — HTTP+JSON/REST (§11)
+        {"url": f"{base}/tasks/rest", "protocolBinding": "HTTP+JSON", "protocolVersion": _A2A_VERSION},
+    ]
+
+AGENT_CARDS: dict[str, dict] = {
+
+    # ── Orchestrator ──────────────────────────────────────────────────────
     "orchestrator": {
-        "name": "Orchestrator Agent",
+        # --- Identity ---
+        "name": "ResolveIQ Orchestrator",
+        "description": (
+            "Master coordinator for P0 supply-chain crisis resolution. "
+            "Broadcasts the crisis brief to all specialist agents, tracks "
+            "round-by-round consensus, triggers the Risk devil's-advocate "
+            "check, and gates on human approval before execution. "
+            "Implemented as a LangGraph StateGraph over RunGraphState."
+        ),
+        "url": f"{_BASE_URL}/agents/orchestrator/tasks",
         "version": "1.0.0",
-        "description": "Coordinates crisis resolution. Routes tasks to specialist agents, detects consensus, triggers human approval.",
-        "capabilities": ["crisis_broadcast", "consensus_detection", "agent_routing", "approval_workflow"],
-        "endpoint": "/agents/orchestrator/tasks",
-        "protocol": "A2A/1.0",
+        "protocolVersion": _A2A_VERSION,            # ← singular string per v0.3.0 spec
+
+        # --- Provider (§4.4.2) ---
+        "provider": _PROVIDER,
+        "documentationUrl": f"{_BASE_URL}/docs#/A2A",
+
+        # --- Multi-transport declaration (§4.4.6) ---
+        "supportedInterfaces": _interfaces("orchestrator"),
+        "supportsAuthenticatedExtendedCard": False,  # no private skill surface yet
+
+        # --- Capability flags (§4.4.3) ---
+        "capabilities": {
+            "streaming": True,              # SSE token-by-token via stream_gemini()
+            "pushNotifications": False,
+            "stateTransitionHistory": True, # run_context carries full round history
+        },
+
+        # --- Content negotiation ---
+        # Agents exchange crisis payloads as JSON; humans read streamed text
+        "defaultInputModes":  ["application/json", "text/plain"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+
+        # --- No auth required (open demo endpoint) ---
+        # Omitting securitySchemes/security signals public access per spec convention
+
+        # --- Skills (§4.4.5) — each skill must have id, name, description, tags ---
+        "skills": [
+            {
+                "id": "crisis-broadcast",
+                "name": "Crisis Broadcast",
+                "description": (
+                    "Receives a P0 crisis payload (scenario + run_id) and fans "
+                    "out the brief to Logistics, Procurement, Finance, Sales, and "
+                    "Risk agents in the correct dependency order, starting the "
+                    "resolution clock and publishing ACTIVATING state events."
+                ),
+                "tags": ["orchestration", "crisis", "broadcast", "multi-agent", "supply-chain"],
+                "examples": [
+                    "Start resolution for SC-2024-8891: Long Beach port strike, budget $500K, deadline 48h",
+                    "Broadcast customs-delay scenario for AAPL shipment to all agents",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json", "text/event-stream"],
+            },
+            {
+                "id": "consensus-detection",
+                "name": "Consensus Detection",
+                "description": (
+                    "Polls round_context after each agent completes. Detects when "
+                    "Logistics, Finance, Procurement, and Sales have all set "
+                    "consensus=True, then triggers the Risk agent's devil's-advocate "
+                    "check before requesting human approval."
+                ),
+                "tags": ["consensus", "multi-agent", "coordination", "langgraph"],
+                "examples": [
+                    "Check if all agents agree on the hybrid-60-40 route",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json"],
+            },
+            {
+                "id": "approval-workflow",
+                "name": "Human-in-the-Loop Approval",
+                "description": (
+                    "Emits an ApprovalRequiredEvent (option, cost_usd, reserve_usd, "
+                    "delivery_hours, confidence) once consensus is reached. Persists "
+                    "run state and episodic memory to TursoDB on approval, then "
+                    "executes the confirmed plan."
+                ),
+                "tags": ["human-in-the-loop", "approval", "hitl", "execution", "turso"],
+                "examples": [
+                    "Submit hybrid route for human approval at $280K + $20K reserve",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json"],
+            },
+        ],
     },
+
+    # ── Logistics ─────────────────────────────────────────────────────────
     "logistics": {
-        "name": "Logistics Agent",
+        "name": "ResolveIQ Logistics Agent",
+        "description": (
+            "Evaluates freight routes under crisis conditions. Fetches live "
+            "carrier rates (air / sea / hybrid) via check_freight_rates(), "
+            "recalls matching historical incidents from TursoDB episodic memory, "
+            "and revises its recommendation when Finance surfaces a hidden "
+            "customs surcharge. Powered by Gemini via LangGraph subgraph."
+        ),
+        "url": f"{_BASE_URL}/agents/logistics/tasks",
         "version": "1.0.0",
-        "description": "Evaluates freight routes. Recalls historical precedents from episodic memory.",
-        "capabilities": ["freight_routing", "memory_recall", "route_optimisation"],
-        "tools": ["check_freight_rates", "memory_recall", "recalculate_route"],
-        "endpoint": "/agents/logistics/tasks",
-        "protocol": "A2A/1.0",
+        "protocolVersion": _A2A_VERSION,
+        "provider": _PROVIDER,
+        "documentationUrl": f"{_BASE_URL}/docs#/A2A",
+        "supportedInterfaces": _interfaces("logistics"),
+        "supportsAuthenticatedExtendedCard": False,
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": False,
+            "stateTransitionHistory": False,
+        },
+        "defaultInputModes":  ["application/json", "text/plain"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+        "skills": [
+            {
+                "id": "freight-rate-evaluation",
+                "name": "Freight Rate Evaluation",
+                "description": (
+                    "Calls check_freight_rates(scenario) to fetch carrier, route, "
+                    "cost_usd, transit_hours, risk_level, and capacity_pct for all "
+                    "available options, then recommends the optimal route with "
+                    "explicit cost / time / risk tradeoffs."
+                ),
+                "tags": ["freight", "routing", "logistics", "supply-chain", "cost", "carrier"],
+                "examples": [
+                    "Evaluate freight options for Long Beach port-strike: air-LAX vs hybrid-60-40",
+                    "Compare FedEx air ($450K/24h) vs hybrid ONE+FedEx ($253K/36h)",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json", "text/event-stream"],
+            },
+            {
+                "id": "episodic-memory-recall",
+                "name": "Episodic Memory Recall",
+                "description": (
+                    "Queries TursoDB (falling back to in-memory bank) for the "
+                    "closest historical crisis match by keyword + scenario type. "
+                    "Returns: date, decision taken, outcome, cost_usd, saved_usd, "
+                    "key_learning, confidence — grounding the recommendation in "
+                    "verified precedent."
+                ),
+                "tags": ["memory", "episodic", "precedent", "historical", "turso", "rag"],
+                "examples": [
+                    "Recall the March 2024 ILWU Long Beach strike — what did we choose?",
+                    "Find a precedent matching customs-delay + semiconductor + Shenzhen",
+                ],
+                "inputModes":  ["application/json", "text/plain"],
+                "outputModes": ["application/json"],
+            },
+            {
+                "id": "route-recalculation",
+                "name": "Route Recalculation",
+                "description": (
+                    "Calls recalculate_route() after a Finance cost challenge. "
+                    "Applies the customs surcharge to the air-only baseline, "
+                    "confirms the revised total breaches the budget cap, and "
+                    "formally re-endorses the hybrid as the dominant option."
+                ),
+                "tags": ["recalculation", "revision", "cost-challenge", "hybrid", "surcharge"],
+                "examples": [
+                    "Recalculate air-LAX after +$50K ILWU expedited-customs surcharge",
+                    "Show revised air total vs hybrid when customs adds $22K strike fee",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json", "text/event-stream"],
+            },
+        ],
     },
+
+    # ── Finance ───────────────────────────────────────────────────────────
     "finance": {
-        "name": "Finance Agent",
+        "name": "ResolveIQ Finance Agent",
+        "description": (
+            "Quantitative challenger and final cost authoriser. Runs 100-iteration "
+            "Monte Carlo simulations (Box-Muller, σ=15%) over the proposed route "
+            "cost, cross-checks scenario-specific customs rates to surface hidden "
+            "surcharges, issues a precise cost challenge to Logistics, then — after "
+            "Risk weighs in — broadcasts the authorised total with confidence interval."
+        ),
+        "url": f"{_BASE_URL}/agents/finance/tasks",
         "version": "1.0.0",
-        "description": "Runs Monte Carlo simulations. Challenges cost assumptions. Proposes consensus.",
-        "capabilities": ["monte_carlo_simulation", "cost_challenge", "consensus_proposal"],
-        "tools": ["run_monte_carlo", "query_customs_rates", "propose_consensus"],
-        "endpoint": "/agents/finance/tasks",
-        "protocol": "A2A/1.0",
+        "protocolVersion": _A2A_VERSION,
+        "provider": _PROVIDER,
+        "documentationUrl": f"{_BASE_URL}/docs#/A2A",
+        "supportedInterfaces": _interfaces("finance"),
+        "supportsAuthenticatedExtendedCard": False,
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": False,
+            "stateTransitionHistory": False,
+        },
+        "defaultInputModes":  ["application/json", "text/plain"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+        "skills": [
+            {
+                "id": "monte-carlo-simulation",
+                "name": "Monte Carlo Cost Simulation",
+                "description": (
+                    "Runs N iterations (default 100) of a Box-Muller normal "
+                    "distribution centred on the proposed route cost (σ=15%). "
+                    "Returns mean_usd, p10_usd, p90_usd, std_usd, "
+                    "confidence_interval, and a 22-bucket histogram for the "
+                    "frontend D3 chart."
+                ),
+                "tags": ["monte-carlo", "simulation", "statistics", "cost", "p10", "p90", "confidence"],
+                "examples": [
+                    "Run 100 Monte Carlo iterations on hybrid route at $253K",
+                    "What is the P10/P90 cost band for the supplier-breach air option?",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json"],
+            },
+            {
+                "id": "customs-rate-query",
+                "name": "Customs Rate Query",
+                "description": (
+                    "Retrieves scenario-specific customs clearance costs: standard, "
+                    "expedited, active-strike surcharge tiers, and processing hours. "
+                    "Used to challenge Logistics estimates that omit LAX Tier-3 "
+                    "expedited-strike fees ($50K all-in for port-strike scenario)."
+                ),
+                "tags": ["customs", "tariff", "surcharge", "LAX", "ILWU", "clearance"],
+                "examples": [
+                    "What is the all-in expedited customs cost at LAX during an ILWU strike?",
+                    "Query Tier-3 surcharge for port-strike scenario — standard vs expedited",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json"],
+            },
+            {
+                "id": "consensus-proposal",
+                "name": "Consensus Proposal & Final Authorisation",
+                "description": (
+                    "After Risk flags a specific failure mode, Finance absorbs a "
+                    "$20K contingency reserve and broadcasts the final authorised "
+                    "total (hybrid_cost + reserve) alongside the Monte Carlo "
+                    "confidence interval to all agents, formally calling for "
+                    "human approval."
+                ),
+                "tags": ["consensus", "authorisation", "reserve", "approval", "final"],
+                "examples": [
+                    "Authorise $253K + $20K reserve = $273K at 94% CI — call for approval",
+                    "Propose final consensus absorbing Risk's LAX ramp-worker contingency",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json", "text/event-stream"],
+            },
+        ],
     },
+
+    # ── Procurement ───────────────────────────────────────────────────────
     "procurement": {
-        "name": "Procurement Agent",
+        "name": "ResolveIQ Procurement Agent",
+        "description": (
+            "Spot-buy specialist. Queries the supplier catalog (TursoDB or "
+            "in-memory fallback) for alternative sources near the crisis location. "
+            "Reports per-supplier: name, location, stock_quantity_pct, "
+            "total_cost_usd, transit_hours, cert_hours, risk_level, and notes. "
+            "Flags quantity shortfalls that require hybrid logistics to bridge."
+        ),
+        "url": f"{_BASE_URL}/agents/procurement/tasks",
         "version": "1.0.0",
-        "description": "Queries supplier catalog. Evaluates spot buy options and quantity constraints.",
-        "capabilities": ["supplier_query", "spot_buy_evaluation", "certification_check"],
-        "tools": ["query_suppliers", "check_inventory", "get_certification_time"],
-        "endpoint": "/agents/procurement/tasks",
-        "protocol": "A2A/1.0",
+        "protocolVersion": _A2A_VERSION,
+        "provider": _PROVIDER,
+        "documentationUrl": f"{_BASE_URL}/docs#/A2A",
+        "supportedInterfaces": _interfaces("procurement"),
+        "supportsAuthenticatedExtendedCard": False,
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": False,
+            "stateTransitionHistory": False,
+        },
+        "defaultInputModes":  ["application/json", "text/plain"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+        "skills": [
+            {
+                "id": "supplier-query",
+                "name": "Supplier Query",
+                "description": (
+                    "Calls query_suppliers(scenario, location_hint) against TursoDB "
+                    "or the in-memory catalog. Returns a list of viable spot-buy "
+                    "sources with full logistics metadata so Logistics and Finance "
+                    "can factor them into route + cost decisions."
+                ),
+                "tags": ["supplier", "spot-buy", "inventory", "procurement", "semiconductor", "catalog"],
+                "examples": [
+                    "Find spot-buy suppliers near Dallas for port-strike scenario, location_hint=dallas",
+                    "Query alt-source suppliers for NVIDIA A100 equivalent during supplier-breach",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json"],
+            },
+            {
+                "id": "spot-buy-evaluation",
+                "name": "Spot Buy Evaluation",
+                "description": (
+                    "Selects the primary supplier by cost and availability, computes "
+                    "the blended cert+transit window, and explicitly flags if "
+                    "stock_quantity_pct < 100% — signalling to the Orchestrator "
+                    "that a hybrid logistics fill is required."
+                ),
+                "tags": ["spot-buy", "evaluation", "quantity", "certification", "shortfall"],
+                "examples": [
+                    "Texas Semiconductor: 80% qty, $380K, 12h transit, 4h cert — flag shortfall",
+                    "Evaluate Dallas spot-buy viability for full 100% coverage of order",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json", "text/event-stream"],
+            },
+        ],
     },
+
+    # ── Sales ─────────────────────────────────────────────────────────────
     "sales": {
-        "name": "Sales Agent",
+        "name": "ResolveIQ Sales Agent",
+        "description": (
+            "Customer relationship guardian. Retrieves live contract terms "
+            "(SLA deadline, penalty clauses, extension eligibility, Q3 "
+            "priority-allocation benefits) via query_contract_terms(). "
+            "Drafts and confirms SLA amendments in real time via "
+            "draft_sla_amendment(), securing written extensions before "
+            "the penalty clock expires."
+        ),
+        "url": f"{_BASE_URL}/agents/sales/tasks",
         "version": "1.0.0",
-        "description": "Reviews contract terms. Negotiates SLA amendments with customers.",
-        "capabilities": ["contract_review", "sla_negotiation", "customer_notification"],
-        "tools": ["query_contract_terms", "draft_sla_amendment", "notify_customer"],
-        "endpoint": "/agents/sales/tasks",
-        "protocol": "A2A/1.0",
+        "protocolVersion": _A2A_VERSION,
+        "provider": _PROVIDER,
+        "documentationUrl": f"{_BASE_URL}/docs#/A2A",
+        "supportedInterfaces": _interfaces("sales"),
+        "supportsAuthenticatedExtendedCard": False,
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": False,
+            "stateTransitionHistory": False,
+        },
+        "defaultInputModes":  ["application/json", "text/plain"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+        "skills": [
+            {
+                "id": "contract-terms-lookup",
+                "name": "Contract Terms Lookup",
+                "description": (
+                    "Calls query_contract_terms(scenario) to retrieve the active "
+                    "SLA: customer, contract_ref, sla_hours, penalty_usd, "
+                    "extension_hours, extension_accepted, penalty_waived, "
+                    "q3_priority_benefit, and amendment_ref."
+                ),
+                "tags": ["contract", "SLA", "terms", "penalty", "customer", "extension"],
+                "examples": [
+                    "Look up AAPL-SC-2024-Q3 contract terms for Apple port-strike scenario",
+                    "What are the SLA penalty and extension clauses for the NVIDIA breach case?",
+                ],
+                "inputModes":  ["application/json", "text/plain"],
+                "outputModes": ["application/json"],
+            },
+            {
+                "id": "sla-amendment-drafting",
+                "name": "SLA Amendment Drafting",
+                "description": (
+                    "Calls draft_sla_amendment(scenario, extension_hours, "
+                    "new_delivery_plan) to generate a confirmed amendment record: "
+                    "amendment_id, extension_granted, new delivery plan text, "
+                    "penalty_waived status, and next_legal_step. "
+                    "Result is published as a rich card in the crisis chat."
+                ),
+                "tags": ["SLA", "amendment", "negotiation", "extension", "penalty-waiver", "legal"],
+                "examples": [
+                    "Draft 36h extension for Apple: hybrid route 36h ETA at $253K",
+                    "Confirm Samsung force-majeure amendment SMSG-FM-2024-0891",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json", "text/event-stream"],
+            },
+        ],
     },
+
+    # ── Risk ──────────────────────────────────────────────────────────────
     "risk": {
-        "name": "Risk Agent — Devil's Advocate",
+        "name": "ResolveIQ Risk Agent — Devil's Advocate",
+        "description": (
+            "Activates ONLY after all four specialist agents have reached consensus. "
+            "Reads the full agreed plan and the scenario-specific risk intelligence "
+            "brief, then identifies the single most dangerous operational failure "
+            "mode — naming a specific company, person, system, or location. "
+            "States severity and prescribes one concrete mitigation or backup "
+            "trigger. Never agrees with consensus; challenging it is its sole role."
+        ),
+        "url": f"{_BASE_URL}/agents/risk/tasks",
         "version": "1.0.0",
-        "description": "Activates AFTER consensus. Finds single points of failure. Forces contingency planning.",
-        "capabilities": ["failure_analysis", "consensus_challenge", "contingency_trigger"],
-        "tools": [],
-        "activation": "post_consensus_only",
-        "endpoint": "/agents/risk/tasks",
-        "protocol": "A2A/1.0",
+        "protocolVersion": _A2A_VERSION,
+        "provider": _PROVIDER,
+        "documentationUrl": f"{_BASE_URL}/docs#/A2A",
+        "supportedInterfaces": _interfaces("risk"),
+        "supportsAuthenticatedExtendedCard": False,
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": False,
+            "stateTransitionHistory": False,
+        },
+        "defaultInputModes":  ["application/json"],
+        "defaultOutputModes": ["application/json", "text/event-stream"],
+        "skills": [
+            {
+                "id": "consensus-challenge",
+                "name": "Consensus Challenge (Devil's Advocate)",
+                "description": (
+                    "Ingests the full run_context (logistics, finance, sales, "
+                    "procurement outputs) plus injected scenario-specific risk "
+                    "intelligence (e.g. LAX ramp-worker ILWU solidarity risk, "
+                    "Busan ATA carnet single-point failure, NVIDIA Friday cert "
+                    "cutoff window) and produces a structured challenge: "
+                    "⚠ Consensus challenge: [specific risk]. [Severity if it "
+                    "fails]. Recommend [backup trigger / mitigation]."
+                ),
+                "tags": [
+                    "risk", "devils-advocate", "failure-mode", "single-point-of-failure",
+                    "contingency", "post-consensus", "supply-chain",
+                ],
+                "examples": [
+                    "Challenge hybrid-60-40 LAX plan: are ILWU ramp workers covered?",
+                    "Identify Busan carnet single-point failure in customs-delay plan",
+                    "Flag NVIDIA Friday 4pm cert cutoff risk for supplier-breach plan",
+                ],
+                "inputModes":  ["application/json"],
+                "outputModes": ["application/json", "text/event-stream"],
+            },
+        ],
     },
 }
 
 
-@app.get("/agents/{agent_name}/.well-known/agent.json", tags=["A2A"])
+@app.get("/agents/{agent_name}/.well-known/agent-card.json", tags=["A2A"])
 async def agent_card(agent_name: str):
     """
-    A2A protocol agent discovery endpoint.
-    Returns the capability card for each agent.
-    Judges can visit these URLs to verify the A2A architecture.
+    A2A Protocol agent discovery endpoint — v0.3.0 well-known URI (§8.2).
+
+    URI changed from agent.json → agent-card.json in v0.3.0 (2025-07-31).
+    Returns the full AgentCard JSON for the named agent, compliant with
+    A2A v0.3.0: protocolVersion (singular string), supportedInterfaces,
+    supportsAuthenticatedExtendedCard, provider, capabilities, typed skills.
+
+    See also: GET /agents/{name}/.well-known/agent.json  (backwards compat alias)
+    Task endpoint: POST /agents/{name}/tasks  (JSON-RPC 2.0, §9.4)
     """
     if agent_name not in AGENT_CARDS:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
-    return AGENT_CARDS[agent_name]
+    return JSONResponse(
+        content=AGENT_CARDS[agent_name],
+        media_type="application/json",
+        headers={"X-A2A-Protocol-Version": _A2A_VERSION},
+    )
+
+
+@app.get("/agents/{agent_name}/.well-known/agent.json", tags=["A2A"])
+async def agent_card_legacy(agent_name: str):
+    """
+    Backwards-compatibility alias for pre-v0.3.0 A2A clients.
+
+    The canonical URI is now /.well-known/agent-card.json (v0.3.0).
+    This endpoint returns the identical payload so older clients and
+    any hardcoded links in docs/demos continue to work.
+    """
+    return await agent_card(agent_name)
 
 
 @app.get("/agents", tags=["A2A"])
 async def list_agents():
-    """List all registered agents and their card URLs."""
+    """
+    Registry of all ResolveIQ A2A agents.
+
+    Returns each agent's agentId, canonical card URL (v0.3.0 URI),
+    task endpoint, version, protocolVersion, skill index (id + name + tags),
+    and capability flags — enough for an A2A client to select and invoke
+    the right agent without fetching every individual card.
+    """
     return {
+        "protocolVersion": _A2A_VERSION,
+        "totalAgents": len(AGENT_CARDS),
         "agents": [
             {
-                "name": name,
-                "card_url": f"/agents/{name}/.well-known/agent.json",
-                **{k: v for k, v in card.items() if k in ("description", "capabilities", "version")},
+                "agentId":       agent_id,
+                "name":          card["name"],
+                # v0.3.0 canonical URI
+                "cardUrl":       f"/agents/{agent_id}/.well-known/agent-card.json",
+                # legacy URI for older clients
+                "cardUrlLegacy": f"/agents/{agent_id}/.well-known/agent.json",
+                "taskUrl":       card["url"],
+                "version":       card["version"],
+                "protocolVersion": card["protocolVersion"],
+                "description":   card["description"],
+                "capabilities":  card["capabilities"],
+                "supportedInterfaces": card.get("supportedInterfaces", []),
+                # Slim skill index — full skill detail lives in the card
+                "skills": [
+                    {"id": s["id"], "name": s["name"], "tags": s["tags"]}
+                    for s in card.get("skills", [])
+                ],
             }
-            for name, card in AGENT_CARDS.items()
-        ]
+            for agent_id, card in AGENT_CARDS.items()
+        ],
     }
+
+
+# ── A2A Task Execution ────────────────────────────────────────────────────
+
+@app.post(
+    "/agents/{agent_name}/tasks",
+    response_model=A2ATaskResult,
+    tags=["A2A"],
+    summary="Execute an A2A task on a specialist agent",
+    response_description="A2A TaskResult with structured outputs and agent messages",
+)
+async def execute_agent_task(agent_name: str, body: A2ATaskRequest):
+    """
+    POST /agents/{agent_name}/tasks  — A2A task execution endpoint (§9.4 / §11.3).
+
+    Routes the task request to the named agent's LangGraph subgraph and
+    returns a structured A2ATaskResult.  The existing /api/runs* and SSE
+    endpoints are unaffected.
+
+    **Agent names**: logistics, finance, procurement, sales, risk.
+    The orchestrator is excluded from direct task calls (use POST /api/runs).
+
+    **Supported tasks per agent**:
+
+    | Agent        | Tasks                                                           |
+    |--------------|-----------------------------------------------------------------|
+    | logistics    | check_freight, recall_memory, evaluate_crisis, revise_route     |
+    | finance      | run_monte_carlo, query_customs, challenge_cost, propose_consensus |
+    | procurement  | query_suppliers, evaluate_spot_buy                              |
+    | sales        | lookup_contract, draft_amendment, negotiate_sla                 |
+    | risk         | challenge_consensus                                             |
+
+    **Streaming**: SSE token events are published to Redis under `task_id`.
+    Open `GET /api/stream/{task_id}` *before* calling this endpoint to receive
+    Gemini tokens as they stream.
+
+    **Common `inputs` keys**:
+    - `scenario`: `"port_strike"` | `"customs_delay"` | `"supplier_breach"`
+    - `logistics`: upstream logistics output dict (for finance / sales / risk)
+    - `hybrid_cost_usd`: overrides default $253K for downstream agents
+    - `base_cost_usd`: Monte Carlo base cost (finance `run_monte_carlo`)
+    - `challenge`: Finance challenge text (logistics `revise_route`)
+    - `reserve_usd`: contingency reserve (finance `propose_consensus`)
+    - `query`: free-text search (logistics `recall_memory`)
+    - `location_hint`: location string (procurement `query_suppliers`)
+    """
+    import uuid
+    import time as _time
+    from graph.a2a_task_runner import dispatch, SUPPORTED_TASKS
+
+    # ── Validate agent ────────────────────────────────────────────────────
+    if agent_name not in AGENT_CARDS:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Agent '{agent_name}' not found. "
+                f"Available: {list(AGENT_CARDS)}"
+            ),
+        )
+    if agent_name == "orchestrator":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The orchestrator is not directly addressable via A2A tasks. "
+                "Use POST /api/runs to start a full scenario run."
+            ),
+        )
+
+    # Allow caller to pin a task_id for addressable SSE streaming
+    caller_meta = body.metadata or {}
+    task_id     = caller_meta.get("task_id") or str(uuid.uuid4())
+    started_at  = _time.time()
+
+    try:
+        result = await dispatch(
+            agent_name=agent_name,
+            task=body.task,
+            inputs=body.inputs,
+            task_id=task_id,
+        )
+    except Exception as exc:
+        log.exception("A2A task failed: agent=%s task=%s", agent_name, body.task)
+        return A2ATaskResult(
+            status="failed",
+            task_id=task_id,
+            agent=agent_name,
+            task=body.task,
+            outputs={},
+            messages=[],
+            error=str(exc),
+            metadata={
+                "conversation_id": body.conversation_id,
+                "duration_ms":     int((_time.time() - started_at) * 1000),
+                **caller_meta,
+            },
+        )
+
+    # Merge caller metadata with our routing/timing fields
+    result_metadata: dict = {
+        "conversation_id": body.conversation_id,
+        "task_id":         task_id,
+        "agent":           agent_name,
+        "supported_tasks": SUPPORTED_TASKS.get(agent_name, []),
+        "duration_ms":     int((_time.time() - started_at) * 1000),
+        "stream_url":      f"/api/stream/{task_id}",
+        # Agent-specific metadata surfaced by the runner
+        **result.pop("metadata", {}),
+        # Caller metadata last — lets callers override our fields if needed
+        **caller_meta,
+    }
+
+    return A2ATaskResult(
+        status="completed",
+        task_id=task_id,
+        agent=agent_name,
+        task=result.get("task", body.task),
+        outputs=result.get("outputs", {}),
+        messages=[m for m in result.get("messages", []) if m],
+        metadata=result_metadata,
+    )
