@@ -1,26 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 
+const NEW_GREEN = '#39d98a'
+
 function drawChart(el, mcDistribution) {
   if (!el || !mcDistribution) return
   el.innerHTML = ''
   const max = Math.max(...mcDistribution)
   mcDistribution.forEach((v, i) => {
-    const bar = document.createElement('div')
-    bar.className = 'cbar'
-    bar.style.flex = '1'
+    const bar       = document.createElement('div')
+    bar.className   = 'cbar'
+    bar.style.flex  = '1'
     bar.style.height = '0%'
     bar.style.borderRadius = '2px 2px 0 0'
-    bar.style.transition = `height 0.75s ease ${i * 0.025}s`
+    bar.style.transition   = `height 0.75s ease ${i * 0.025}s`
     if (i < 4 || i > 17) {
       bar.style.background = 'linear-gradient(180deg,rgba(255,59,92,.5),rgba(255,59,92,.1))'
     } else if (i >= 6 && i <= 14) {
-      bar.style.background = 'linear-gradient(180deg,rgba(0,230,118,.7),rgba(0,230,118,.15))'
+      bar.style.background = 'linear-gradient(180deg,rgba(57,217,138,.7),rgba(57,217,138,.15))'
     } else {
       bar.style.background = 'linear-gradient(180deg,rgba(0,212,255,.5),rgba(0,212,255,.1))'
     }
     el.appendChild(bar)
   })
-  // Double rAF: first frame commits 0% heights, second frame triggers the transition
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       el.querySelectorAll('.cbar').forEach((b, i) => {
@@ -30,28 +31,44 @@ function drawChart(el, mcDistribution) {
   })
 }
 
-export default function DecisionTab({ mcDistribution, mcStats }) {
-  const [pen, setPen] = useState(2000)
-  const [dl,  setDl ] = useState(48)
-  const [bud, setBud] = useState(500)
-  const [roiShipments] = useState(200)
+export default function DecisionTab({ mcDistribution, mcStats, isActive }) {
+  const [pen, setPen]           = useState(2000)
+  const [dl,  setDl ]           = useState(48)
+  const [bud, setBud]           = useState(500)
+  const [roiShipments]          = useState(200)
 
-  const chartNodeRef = useRef(null)
+  const chartNodeRef  = useRef(null)
+  const firstOpenRef  = useRef(false)   // has the tab ever been opened with data?
+  const prevActiveRef = useRef(false)   // was it active last render?
 
-  // Callback ref: called when the DOM node mounts/unmounts
+  // Callback ref — draw immediately when DOM node mounts
   const chartRef = useCallback((node) => {
     chartNodeRef.current = node
-    if (node && mcDistribution) {
-      drawChart(node, mcDistribution)
-    }
-  }, []) // intentionally empty — mcDistribution changes handled by useEffect below
+    if (node && mcDistribution) drawChart(node, mcDistribution)
+  }, []) // eslint-disable-line
 
-  // Re-draw whenever new distribution data arrives
+  // Re-draw when fresh distribution data arrives
   useEffect(() => {
     if (mcDistribution && chartNodeRef.current) {
       drawChart(chartNodeRef.current, mcDistribution)
+      firstOpenRef.current = true
     }
   }, [mcDistribution])
+
+  // Re-animate chart when user first opens the tab after data already exists
+  useEffect(() => {
+    const justOpened = isActive && !prevActiveRef.current
+    prevActiveRef.current = isActive
+
+    if (justOpened && mcDistribution && chartNodeRef.current && !firstOpenRef.current) {
+      // Small delay to let the tpane become visible before animating
+      const t = setTimeout(() => {
+        drawChart(chartNodeRef.current, mcDistribution)
+        firstOpenRef.current = true
+      }, 80)
+      return () => clearTimeout(t)
+    }
+  }, [isActive, mcDistribution])
 
   const savings = Math.round(220 * (pen / 2000) * (bud / 500))
   const stats   = mcStats || { mean: 280000, p10: 241000, p90: 318000, ci: 0.94 }
@@ -93,7 +110,7 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
           </div>
         </div>
 
-        <div className="wires" style={{ color: savings > 150 ? '#00e676' : '#ffb340' }}>
+        <div className="wires" style={{ color: savings > 150 ? NEW_GREEN : '#ffb340' }}>
           → Hybrid saves ${savings}K · At {roiShipments} shipments/yr → ${(savings * roiShipments / 1000).toFixed(1)}M/yr saved
         </div>
       </div>
@@ -129,8 +146,8 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
             <td><span className="bdg born">20% short</span></td>
           </tr>
           <tr className="rec">
-            <td><span className="oname" style={{ color: '#00e676' }}>✦ Hybrid</span></td>
-            <td style={{ color: '#00e676' }}>$280K</td>
+            <td><span className="oname" style={{ color: NEW_GREEN }}>✦ Hybrid</span></td>
+            <td style={{ color: NEW_GREEN }}>$280K</td>
             <td>36h</td>
             <td><div className="rbar"><div className="rf rmd" style={{ width: '36px' }} />4/10</div></td>
             <td>🟡</td>
@@ -143,7 +160,7 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
       <div className="mccard">
         <div className="sec-hd" style={{ marginBottom: '4px' }}>
           <div className="sec-ttl">Monte Carlo Simulation</div>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '10px', color: '#00e676' }}>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '10px', color: NEW_GREEN }}>
             100 iters · {Math.round((stats.ci ?? 0.94) * 100)}% CI
           </span>
         </div>
@@ -155,7 +172,7 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
           </div>
           <div>
             <div className="mcsl">P10</div>
-            <div className="mcsv" style={{ color: '#00e676' }}>${(stats.p10 / 1000).toFixed(0)}K</div>
+            <div className="mcsv" style={{ color: NEW_GREEN }}>${(stats.p10 / 1000).toFixed(0)}K</div>
           </div>
           <div>
             <div className="mcsl">P90</div>
@@ -163,11 +180,11 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
           </div>
           <div>
             <div className="mcsl">Saved vs Air</div>
-            <div className="mcsv" style={{ color: '#00e676' }}>$220K</div>
+            <div className="mcsv" style={{ color: NEW_GREEN }}>$220K</div>
           </div>
         </div>
 
-        {/* chart-area is ALWAYS rendered — ref div is always in the DOM */}
+        {/* Chart — always rendered so ref is always attached */}
         <div className="chart-area" id="mcChart" style={{ position: 'relative' }}>
           {!mcDistribution && (
             <div style={{

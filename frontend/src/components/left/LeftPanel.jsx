@@ -1,7 +1,7 @@
-import MapTab from './MapTab'
-import SplitTab from './SplitTab'
+import MapTab      from './MapTab'
+import SplitTab    from './SplitTab'
 import DecisionTab from './DecisionTab'
-import AuditTab from './AuditTab'
+import AuditTab    from './AuditTab'
 
 const TABS = [
   { id: 'map',      label: '🗺 Live Map' },
@@ -13,7 +13,6 @@ const TABS = [
 export default function LeftPanel({
   activeTab,
   onTabChange,
-  // Map props
   scenario,
   mapRoute,
   mapStatus,
@@ -21,15 +20,12 @@ export default function LeftPanel({
   truckPhase,
   onTruckPhaseChange,
   phase,
-  // Decision tab props
   mcDistribution,
   mcStats,
-  // Audit tab props
   auditItems,
 }) {
   return (
     <div className="left">
-      {/* Tab bar */}
       <div className="tabs">
         {TABS.map(tab => (
           <div
@@ -42,7 +38,6 @@ export default function LeftPanel({
         ))}
       </div>
 
-      {/* Tab panes */}
       <div className={`tpane${activeTab === 'map' ? ' on' : ''}`}>
         <MapTab
           scenario={scenario}
@@ -61,7 +56,11 @@ export default function LeftPanel({
       </div>
 
       <div className={`tpane${activeTab === 'decision' ? ' on' : ''}`}>
-        <DecisionTab mcDistribution={mcDistribution} mcStats={mcStats} />
+        <DecisionTab
+          mcDistribution={mcDistribution}
+          mcStats={mcStats}
+          isActive={activeTab === 'decision'}
+        />
       </div>
 
       <div className={`tpane${activeTab === 'audit' ? ' on' : ''}`}>
