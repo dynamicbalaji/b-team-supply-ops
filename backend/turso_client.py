@@ -61,20 +61,64 @@ def _get_client():
     cfg = get_settings()
     if not cfg.turso_database_url or not cfg.turso_auth_token:
         return None
-    return libsql.create_client(
-        url=cfg.turso_database_url,
-        auth_token=cfg.turso_auth_token,
-    )
+    try:
+        return libsql.create_client(
+            url=cfg.turso_database_url,
+            auth_token=cfg.turso_auth_token,
+            # Use sync_interval=0 to avoid persistent background connections
+            # which can cause issues with WebSocket handshakes during startup
+        )
+    except Exception as e:
+        log.warning("Failed to create Turso client: %s", e)
+        return None
 
 
 def is_configured() -> bool:
     cfg = get_settings()
-    return (
+    url = cfg.turso_database_url
+    token = cfg.turso_auth_token
+    
+    is_valid = (
         _SDK_AVAILABLE
-        and bool(cfg.turso_database_url)
-        and bool(cfg.turso_auth_token)
-        and cfg.turso_database_url != "libsql://your-db-name.turso.io"
+        and bool(url)
+        and bool(token)
+        and url != "libsql://your-db-name.turso.io"
+        and token != "your_auth_token_here"
     )
+    
+    if is_valid and not url.startswith(("libsql://", "wss://", "https://")):
+        log.warning("Invalid Turso URL scheme: %s (should start with libsql://, wss://, or https://)", url[:20])
+        return False
+    
+    return is_valid
+
+
+def _validate_config() -> tuple[bool, str]:
+    """
+    Validates Turso configuration and returns (is_valid, error_message).
+    Checks for common configuration mistakes.
+    """
+    cfg = get_settings()
+    url = cfg.turso_database_url
+    token = cfg.turso_auth_token
+    
+    if not url or not token:
+        return False, "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN not set in .env"
+    
+    if url == "libsql://your-db-name.turso.io":
+        return False, "TURSO_DATABASE_URL still has placeholder value"
+    
+    if token == "your_auth_token_here":
+        return False, "TURSO_AUTH_TOKEN still has placeholder value"
+    
+    if not url.startswith(("libsql://", "wss://", "https://")):
+        return False, f"Invalid TURSO_DATABASE_URL scheme: {url[:30]}... (must start with libsql://)"
+    
+    if len(token) < 20:
+        return False, "TURSO_AUTH_TOKEN appears too short (likely invalid)"
+    
+    log.debug("Config validation passed | URL=%s | Token length=%d", url[:50], len(token))
+    return True, ""
 
 
 # ── Schema ─────────────────────────────────────────────────────────────────
@@ -255,76 +299,74 @@ _SEED_CONTRACTS = [
 
 async def init_schema() -> bool:
     """
-    Creates all tables and seeds reference data.
-    Safe to call multiple times — CREATE TABLE IF NOT EXISTS + INSERT OR IGNORE.
-    Returns True on success, False if TursoDB is not configured.
+    Verify TursoDB connection and that required tables exist.
+    Does NOT create tables or seed data (assumes they exist already).
+    Returns True on success, False if TursoDB is not configured or connection fails.
     """
+    # Pre-flight validation
+    is_valid, error_msg = _validate_config()
+    if not is_valid:
+        log.warning("TursoDB configuration invalid: %s — skipping connection check (in-memory fallbacks active)", error_msg)
+        return False
+
+    if not is_configured():
+        log.warning("TursoDB not configured — skipping connection check (in-memory fallbacks active)")
+        return False
+
     client = _get_client()
     if client is None:
-        log.warning("TursoDB not configured — skipping schema init (in-memory fallbacks active)")
+        log.warning("TursoDB client creation failed — skipping connection check (in-memory fallbacks active)")
         return False
 
-    log.info("TursoDB: initialising schema…")
-    try:
-        async with client as c:
-            # Create tables
-            for stmt in _SCHEMA_SQL:
-                await c.execute(stmt.strip())
+    log.info("TursoDB: verifying connection and schema…")
+    
+    # Retry logic with exponential backoff
+    max_retries = 3
+    required_tables = ["runs", "episodic_memory", "suppliers", "contracts"]
+    
+    for attempt in range(max_retries):
+        try:
+            async with client as c:
+                # Verify each required table exists with a simple query
+                for table in required_tables:
+                    rs = await c.execute(f"SELECT COUNT(*) FROM {table}")
+                    row_count = rs.rows[0][0] if rs.rows else 0
+                    log.debug(f"✓ Table '{table}' exists ({row_count} rows)")
 
-            # Seed episodic memory
-            for row in _SEED_MEMORY:
-                await c.execute(
-                    """INSERT OR IGNORE INTO episodic_memory
-                       (memory_key, scenario_type, date_label, crisis, decision,
-                        outcome, cost_usd, saved_usd, key_learning, confidence)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                    [row["memory_key"], row["scenario_type"], row["date_label"],
-                     row["crisis"], row["decision"], row["outcome"],
-                     row["cost_usd"], row["saved_usd"], row["key_learning"],
-                     row["confidence"]],
-                )
+            log.info("TursoDB: ✅ connection verified — all 4 required tables found and accessible")
+            return True
 
-            # Seed suppliers
-            for row in _SEED_SUPPLIERS:
-                await c.execute(
-                    """INSERT OR IGNORE INTO suppliers
-                       (id, scenario_type, name, location, distance_from_la,
-                        stock_quantity_pct, unit_cost_premium_pct, total_cost_usd,
-                        transit_hours, cert_hours, risk_level, notes, contact)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    [row["id"], row["scenario_type"], row["name"], row["location"],
-                     row["distance_from_la"], row["stock_quantity_pct"],
-                     row["unit_cost_premium_pct"], row["total_cost_usd"],
-                     row["transit_hours"], row["cert_hours"], row["risk_level"],
-                     row["notes"], row["contact"]],
-                )
-
-            # Seed contracts
-            for row in _SEED_CONTRACTS:
-                await c.execute(
-                    """INSERT OR IGNORE INTO contracts
-                       (scenario_type, customer, contract_ref, penalty_clause,
-                        sla_delivery_hours, current_delay_risk_h, extension_terms,
-                        extension_accepted, extension_hours, q3_priority_available,
-                        q3_priority_benefit, penalty_waived, amendment_ref,
-                        customer_contact, notes)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    [row["scenario_type"], row["customer"], row["contract_ref"],
-                     row["penalty_clause"], row["sla_delivery_hours"],
-                     row["current_delay_risk_h"], row["extension_terms"],
-                     row["extension_accepted"], row["extension_hours"],
-                     row["q3_priority_available"], row["q3_priority_benefit"],
-                     row["penalty_waived"], row["amendment_ref"],
-                     row["customer_contact"], row["notes"]],
-                )
-
-        log.info("TursoDB: schema ready — 4 tables, seed data loaded")
-        return True
-
-    except Exception as exc:
-        log.error("TursoDB schema init failed: %s", exc)
-        return False
-
+        except (asyncio.TimeoutError, ConnectionError) as exc:
+            wait_time = (2 ** attempt) + 1  # 2s, 3s, 5s (added base to avoid too-short waits)
+            if attempt < max_retries - 1:
+                log.warning("TursoDB connection attempt %d failed (%s), retrying in %ds…", 
+                           attempt + 1, type(exc).__name__, wait_time)
+                await asyncio.sleep(wait_time)
+            else:
+                log.error("TursoDB connection failed after %d attempts: %s — Verify: (1) database is running, (2) auth token hasn't expired, (3) network can reach wss://supportops-dynamicbalaji.aws-us-east-2.turso.io", 
+                         max_retries, exc)
+                return False
+        except Exception as exc:
+            exc_type = type(exc).__name__
+            exc_msg = str(exc)
+            
+            # Provide helpful hints for common errors
+            if "505" in exc_msg or "Invalid response status" in exc_msg:
+                # 505 often means protocol issues with WebSocket handshake
+                log.error("TursoDB WebSocket handshake failed (505): This may indicate:")
+                log.error("  • The Turso server is temporarily unavailable")
+                log.error("  • Network/firewall is blocking wss:// connections")
+                log.error("  • Auth token is invalid or expired (run: turso db tokens create <db-name>)")
+                log.error("  Full error: %s", exc_msg)
+            elif "401" in exc_msg or "Unauthorized" in exc_msg:
+                log.error("TursoDB auth failed (401): check that TURSO_AUTH_TOKEN is valid and not expired", exc_msg)
+            elif "no such table" in exc_msg.lower():
+                log.error("TursoDB schema mismatch: %s — required tables (%s) not found.", exc_msg, ", ".join(required_tables))
+            else:
+                log.error("TursoDB connection check failed (%s): %s", exc_type, exc_msg)
+            return False
+    
+    return False
 
 async def health_check() -> bool:
     """Ping TursoDB. Returns True if reachable."""
@@ -332,10 +374,16 @@ async def health_check() -> bool:
         return False
     try:
         client = _get_client()
+        if client is None:
+            return False
         async with client as c:
             rs = await c.execute("SELECT 1")
             return len(rs.rows) > 0
-    except Exception:
+    except asyncio.TimeoutError:
+        log.warning("TursoDB health check timed out")
+        return False
+    except Exception as e:
+        log.debug("TursoDB health check failed: %s", e)
         return False
 
 

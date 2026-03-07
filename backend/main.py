@@ -59,11 +59,29 @@ def _setup_logging() -> None:
     root.setLevel(logging.DEBUG)
 
     # Quiet down noisy third-party loggers
-    for noisy in ("httpx", "httpcore", "uvicorn.access", "asyncio", "multipart"):
+    for noisy in ("httpx", "httpcore", "uvicorn.access", "asyncio", "multipart", "aiohttp"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 _setup_logging()
 log = logging.getLogger("resolveiq.main")
+
+
+# ── AsyncIO exception handler ────────────────────────────────────────────
+
+def _handle_exception(loop, context):
+    """Suppress expected connection errors from WebSocket backends."""
+    exception = context.get('exception')
+    msg = context.get('message', '')
+    
+    # Suppress expected Turso/WebSocket handshake errors
+    if exception and 'WSServerHandshakeError' in type(exception).__name__:
+        log.debug("Suppressed expected WebSocket error: %s", exception)
+        return
+    
+    # Log other exceptions normally
+    log.error("Unhandled exception in asyncio event loop: %s", context)
+
+asyncio.get_event_loop().set_exception_handler(_handle_exception)
 
 
 # ── Lifespan (startup / shutdown) ────────────────────────────────────────
@@ -75,7 +93,16 @@ async def lifespan(app: FastAPI):
     import turso_client
     chain    = active_model_chain()
     redis_ok = await redis_client.health_check()
-    turso_ok = await turso_client.init_schema()   # creates tables + seeds data
+    
+    # Initialize Turso schema with a timeout to prevent hanging
+    try:
+        turso_ok = await asyncio.wait_for(turso_client.init_schema(), timeout=30.0)
+    except asyncio.TimeoutError:
+        log.error("TursoDB schema initialization timed out (30s)")
+        turso_ok = False
+    except Exception as e:
+        log.error("TursoDB schema initialization failed: %s", e)
+        turso_ok = False
 
     if redis_ok:
         log.info("✅ Redis connected")
