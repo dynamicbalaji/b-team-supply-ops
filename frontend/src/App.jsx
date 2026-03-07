@@ -259,6 +259,7 @@ export default function App() {
           phase={state.phase}
           mcDistribution={state.mcDistribution}
           mcStats={state.mcStats}
+          auditItems={state.auditItems}
         />
 
         <RightPanel

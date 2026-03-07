@@ -24,6 +24,8 @@ export default function LeftPanel({
   // Decision tab props
   mcDistribution,
   mcStats,
+  // Audit tab props
+  auditItems,
 }) {
   return (
     <div className="left">
@@ -63,7 +65,7 @@ export default function LeftPanel({
       </div>
 
       <div className={`tpane${activeTab === 'audit' ? ' on' : ''}`}>
-        <AuditTab />
+        <AuditTab auditItems={auditItems} />
       </div>
     </div>
   )

@@ -1,23 +1,60 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+
+function drawChart(el, mcDistribution) {
+  if (!el || !mcDistribution) return
+  el.innerHTML = ''
+  const max = Math.max(...mcDistribution)
+  mcDistribution.forEach((v, i) => {
+    const bar = document.createElement('div')
+    bar.className = 'cbar'
+    bar.style.flex = '1'
+    bar.style.height = '0%'
+    bar.style.borderRadius = '2px 2px 0 0'
+    bar.style.transition = `height 0.75s ease ${i * 0.025}s`
+    if (i < 4 || i > 17) {
+      bar.style.background = 'linear-gradient(180deg,rgba(255,59,92,.5),rgba(255,59,92,.1))'
+    } else if (i >= 6 && i <= 14) {
+      bar.style.background = 'linear-gradient(180deg,rgba(0,230,118,.7),rgba(0,230,118,.15))'
+    } else {
+      bar.style.background = 'linear-gradient(180deg,rgba(0,212,255,.5),rgba(0,212,255,.1))'
+    }
+    el.appendChild(bar)
+  })
+  // Double rAF: first frame commits 0% heights, second frame triggers the transition
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      el.querySelectorAll('.cbar').forEach((b, i) => {
+        b.style.height = `${(mcDistribution[i] / max) * 100}%`
+      })
+    })
+  })
+}
 
 export default function DecisionTab({ mcDistribution, mcStats }) {
-  const [pen, setPen] = useState(2000)   // contract penalty $K
-  const [dl,  setDl ] = useState(48)    // deadline window h
-  const [bud, setBud] = useState(500)   // budget cap $K
+  const [pen, setPen] = useState(2000)
+  const [dl,  setDl ] = useState(48)
+  const [bud, setBud] = useState(500)
+  const [roiShipments] = useState(200)
 
-  // Live recalc: savings scale with penalty risk and budget headroom
-  const savings  = Math.round(220 * (pen / 2000) * (bud / 500))
-  const wiResult = savings > 150
-    ? `→ Hybrid saves $${savings}K · Optimal within all constraints`
-    : `→ Budget too tight — consider Air at $${Math.round(500 * (pen / 2000))}K`
+  const chartNodeRef = useRef(null)
 
-  // Monte Carlo stats — use live data if available, otherwise defaults
-  const stats = mcStats || { mean:280000, p10:241000, p90:318000, ci:0.94 }
-  const fmt   = (v) => '$' + Math.round(v / 1000) + 'K'
-  const dist  = mcDistribution
+  // Callback ref: called when the DOM node mounts/unmounts
+  const chartRef = useCallback((node) => {
+    chartNodeRef.current = node
+    if (node && mcDistribution) {
+      drawChart(node, mcDistribution)
+    }
+  }, []) // intentionally empty — mcDistribution changes handled by useEffect below
 
-  // Bar chart from distribution array
-  const maxVal = dist ? Math.max(...dist) : 92
+  // Re-draw whenever new distribution data arrives
+  useEffect(() => {
+    if (mcDistribution && chartNodeRef.current) {
+      drawChart(chartNodeRef.current, mcDistribution)
+    }
+  }, [mcDistribution])
+
+  const savings = Math.round(220 * (pen / 2000) * (bud / 500))
+  const stats   = mcStats || { mean: 280000, p10: 241000, p90: 318000, ci: 0.94 }
 
   return (
     <div className="dpan">
@@ -56,9 +93,8 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
           </div>
         </div>
 
-        <div className="wires"
-          style={{ color: savings > 150 ? '#00e676' : '#ffb340' }}>
-          {wiResult}
+        <div className="wires" style={{ color: savings > 150 ? '#00e676' : '#ffb340' }}>
+          → Hybrid saves ${savings}K · At {roiShipments} shipments/yr → ${(savings * roiShipments / 1000).toFixed(1)}M/yr saved
         </div>
       </div>
 
@@ -78,25 +114,25 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
         <tbody>
           <tr>
             <td><span className="oname">Air Freight</span></td>
-            <td style={{ color:'#ff3b5c' }}>$500K</td>
+            <td style={{ color: '#ff3b5c' }}>$500K</td>
             <td>24h</td>
-            <td><div className="rbar"><div className="rf rlo" style={{ width:'18px' }} />2/10</div></td>
+            <td><div className="rbar"><div className="rf rlo" style={{ width: '18px' }} />2/10</div></td>
             <td>🔴</td>
             <td><span className="bdg bgrn">None</span></td>
           </tr>
           <tr>
             <td><span className="oname">Spot Buy</span></td>
-            <td style={{ color:'#ffb340' }}>$380K</td>
+            <td style={{ color: '#ffb340' }}>$380K</td>
             <td>12h</td>
-            <td><div className="rbar"><div className="rf rhi" style={{ width:'62px' }} />7/10</div></td>
+            <td><div className="rbar"><div className="rf rhi" style={{ width: '62px' }} />7/10</div></td>
             <td>🟡</td>
             <td><span className="bdg born">20% short</span></td>
           </tr>
           <tr className="rec">
-            <td><span className="oname" style={{ color:'#00e676' }}>✦ Hybrid</span></td>
-            <td style={{ color:'#00e676' }}>$280K</td>
+            <td><span className="oname" style={{ color: '#00e676' }}>✦ Hybrid</span></td>
+            <td style={{ color: '#00e676' }}>$280K</td>
             <td>36h</td>
-            <td><div className="rbar"><div className="rf rmd" style={{ width:'36px' }} />4/10</div></td>
+            <td><div className="rbar"><div className="rf rmd" style={{ width: '36px' }} />4/10</div></td>
             <td>🟡</td>
             <td><span className="bdg born">Minor</span></td>
           </tr>
@@ -105,9 +141,9 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
 
       {/* ── Monte Carlo ── */}
       <div className="mccard">
-        <div className="sec-hd" style={{ marginBottom:'4px' }}>
+        <div className="sec-hd" style={{ marginBottom: '4px' }}>
           <div className="sec-ttl">Monte Carlo Simulation</div>
-          <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#00e676' }}>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '10px', color: '#00e676' }}>
             100 iters · {Math.round((stats.ci ?? 0.94) * 100)}% CI
           </span>
         </div>
@@ -115,59 +151,38 @@ export default function DecisionTab({ mcDistribution, mcStats }) {
         <div className="mcstats">
           <div>
             <div className="mcsl">Mean</div>
-            <div className="mcsv" style={{ color:'#00d4ff' }}>{fmt(stats.mean)}</div>
+            <div className="mcsv" style={{ color: '#00d4ff' }}>${(stats.mean / 1000).toFixed(0)}K</div>
           </div>
           <div>
             <div className="mcsl">P10</div>
-            <div className="mcsv" style={{ color:'#00e676' }}>{fmt(stats.p10)}</div>
+            <div className="mcsv" style={{ color: '#00e676' }}>${(stats.p10 / 1000).toFixed(0)}K</div>
           </div>
           <div>
             <div className="mcsl">P90</div>
-            <div className="mcsv" style={{ color:'#ffb340' }}>{fmt(stats.p90)}</div>
+            <div className="mcsv" style={{ color: '#ffb340' }}>${(stats.p90 / 1000).toFixed(0)}K</div>
           </div>
           <div>
             <div className="mcsl">Saved vs Air</div>
-            <div className="mcsv" style={{ color:'#00e676' }}>
-              ${Math.round((500000 - stats.mean) / 1000)}K
-            </div>
+            <div className="mcsv" style={{ color: '#00e676' }}>$220K</div>
           </div>
         </div>
 
-        {/* Bar chart — renders once mcDistribution arrives */}
-        <div className="chart-area" id="mcChart">
-          {dist ? (
-            <div style={{ display:'flex', alignItems:'flex-end', gap:'2px', width:'100%', height:'100%' }}>
-              {dist.map((v, i) => {
-                const pct     = (v / maxVal) * 100
-                // Colour: red = low cost, green = target zone, orange = high
-                const isTarget = i >= 8 && i <= 14
-                const color   = isTarget ? '#00e676' : i < 6 ? '#3d5a72' : '#ffb340'
-                return (
-                  <div
-                    key={i}
-                    title={`$${Math.round(241 + i * 3.7)}K — ${v} runs`}
-                    style={{
-                      flex: 1,
-                      height: `${pct}%`,
-                      background: color,
-                      opacity: isTarget ? 0.9 : 0.5,
-                      borderRadius: '2px 2px 0 0',
-                      transition: 'height 0.4s ease',
-                      minHeight: v > 0 ? '2px' : 0,
-                    }}
-                  />
-                )
-              })}
-            </div>
-          ) : (
+        {/* chart-area is ALWAYS rendered — ref div is always in the DOM */}
+        <div className="chart-area" id="mcChart" style={{ position: 'relative' }}>
+          {!mcDistribution && (
             <div style={{
-              display:'flex', alignItems:'center', justifyContent:'center',
-              width:'100%', height:'100%',
-              fontFamily:"'JetBrains Mono',monospace", fontSize:'9px', color:'#3d5a72',
+              position: 'absolute', inset: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: "'JetBrains Mono',monospace", fontSize: '9px', color: '#3d5a72',
+              pointerEvents: 'none',
             }}>
               Run a scenario to generate simulation data
             </div>
           )}
+          <div
+            ref={chartRef}
+            style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', width: '100%', height: '100%' }}
+          />
         </div>
       </div>
 

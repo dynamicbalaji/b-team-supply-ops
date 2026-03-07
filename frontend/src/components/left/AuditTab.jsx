@@ -49,7 +49,29 @@ const STATIC_AUDIT_ITEMS = [
   },
 ]
 
-export default function AuditTab() {
+// Map SSE audit event shape → display shape
+function normalizeItem(item) {
+  // If it's already a display-ready object (from STATIC_AUDIT_ITEMS), pass through
+  if (item.agent) return item
+
+  // SSE audit event shape from App.jsx: { time, agentColor, agentLabel, description, data, hasMemory }
+  return {
+    color:  item.agentColor  || '#00d4ff',
+    time:   item.time        || '',
+    agent:  item.agentLabel  || '',
+    desc:   item.description || '',
+    data:   item.data        || '',
+    memory: item.hasMemory
+      ? `📚 ${item.description?.split('Memory recalled')[1]?.trim() || 'Memory context available'}`
+      : null,
+  }
+}
+
+export default function AuditTab({ auditItems }) {
+  const items = (auditItems && auditItems.length > 0)
+    ? auditItems.map(normalizeItem)
+    : STATIC_AUDIT_ITEMS
+
   return (
     <div className="aud">
       <div className="sec-hd">
@@ -63,7 +85,7 @@ export default function AuditTab() {
       </div>
 
       <div className="atl">
-        {STATIC_AUDIT_ITEMS.map((item, idx) => (
+        {items.map((item, idx) => (
           <div className="aitem" key={idx}>
             <div
               className="adot"
