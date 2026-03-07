@@ -15,7 +15,8 @@ export default function LeftPanel({
   scenario, mapRoute, mapStatus, mapStatusColor,
   truckPhase, onTruckPhaseChange, phase,
   mcDistribution, mcStats, auditItems,
-  messages, resolutionTime, costSaved,
+  messages, resolutionTime, costSaved, isRunning,
+  approvalData,
 }) {
   return (
     <div className="left">
@@ -45,6 +46,7 @@ export default function LeftPanel({
           messages={messages}
           resolutionTime={resolutionTime}
           costSaved={costSaved}
+          isRunning={isRunning}
         />
       </div>
 
@@ -52,6 +54,8 @@ export default function LeftPanel({
         <DecisionTab
           mcDistribution={mcDistribution} mcStats={mcStats}
           isActive={activeTab === 'decision'}
+          approvalData={approvalData}
+          isRunning={isRunning}
         />
       </div>
 

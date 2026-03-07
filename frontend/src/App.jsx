@@ -277,6 +277,8 @@ export default function App() {
           messages={state.messages}
           resolutionTime={state.resolutionTime}
           costSaved={state.costSaved}
+          isRunning={state.isRunning}
+          approvalData={state.approvalData}
         />
         <RightPanel
           agents={agents} riskAgent={riskAgent}
