@@ -6,7 +6,7 @@ export default function CrisisBanner({ scenario, tickerValue }) {
 
   return (
     <div className="crisis">
-      <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden' }}>
+      <div style={{ display:'flex', alignItems:'center', minWidth:0, overflow:'hidden' }}>
         <span className="cbadge">CRITICAL</span>
         <span className="ctxt">
           <b>{s.title}</b> {s.crisis}
@@ -15,7 +15,7 @@ export default function CrisisBanner({ scenario, tickerValue }) {
       <div className="ticker-wrap">
         <div className="ticker-lbl">Cost accumulating</div>
         <div className="ticker-val">{formatted}</div>
-        <div className="ticker-sub">Traditional: ~$149K/72h</div>
+        <div className="ticker-sub">Traditional: {s.traditional}</div>
       </div>
     </div>
   )
