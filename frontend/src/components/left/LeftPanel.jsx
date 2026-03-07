@@ -21,6 +21,9 @@ export default function LeftPanel({
   truckPhase,
   onTruckPhaseChange,
   phase,
+  // Decision tab props
+  mcDistribution,
+  mcStats,
 }) {
   return (
     <div className="left">
@@ -56,7 +59,7 @@ export default function LeftPanel({
       </div>
 
       <div className={`tpane${activeTab === 'decision' ? ' on' : ''}`}>
-        <DecisionTab />
+        <DecisionTab mcDistribution={mcDistribution} mcStats={mcStats} />
       </div>
 
       <div className={`tpane${activeTab === 'audit' ? ' on' : ''}`}>

@@ -9,16 +9,20 @@ export default function BottomBar({
   roiShipments,
   onRoiChange,
 }) {
-  const shipments    = roiShipments ?? 200
+  const shipments     = roiShipments ?? 200
+  // $220K saved per incident × shipments per year
   const annualSavings = ((220 * shipments) / 1000).toFixed(1)
 
   return (
     <div className="bbar">
-      {/* Left metrics */}
+
+      {/* ── Left: live metrics ── */}
       <div className="metrics">
         <div className="met">
-          <span className="mlbl">Resolution</span>
-          <span className="mval">{resolutionTime ?? '—'}</span>
+          <span className="mlbl">AI Resolution</span>
+          <span className="mval" style={{ color: resolutionTime ? '#00e676' : undefined }}>
+            {resolutionTime ?? '—'}
+          </span>
         </div>
         <div className="met">
           <span className="mlbl">Cost Saved</span>
@@ -29,12 +33,12 @@ export default function BottomBar({
           <span className="mval red">72 hrs</span>
         </div>
         <div className="met">
-          <span className="mlbl">Messages</span>
+          <span className="mlbl">A2A Messages</span>
           <span className="mval">{msgCount ?? 0}</span>
         </div>
       </div>
 
-      {/* Center ROI slider */}
+      {/* ── Center: ROI slider ── */}
       <div className="roi-row">
         <span className="roi-lbl">Shipments/yr:</span>
         <input
@@ -44,30 +48,16 @@ export default function BottomBar({
           value={shipments}
           onChange={e => onRoiChange?.(+e.target.value)}
         />
-        <span
-          className="roi-lbl"
-          style={{
-            minWidth: '28px',
-            fontFamily: "'JetBrains Mono',monospace",
-            fontSize: '11px',
-            color: '#ddeeff',
-          }}
-        >
+        <span style={{ minWidth:'28px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#ddeeff' }}>
           {shipments}
         </span>
         <span className="roi-lbl">→ Annual savings:</span>
         <span className="roi-val">${annualSavings}M/yr</span>
       </div>
 
-      {/* Right scenario selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-        <span
-          style={{
-            fontSize: '9px',
-            color: '#3d5a72',
-            fontFamily: "'JetBrains Mono',monospace",
-          }}
-        >
+      {/* ── Right: scenario selector ── */}
+      <div style={{ display:'flex', alignItems:'center', gap:'7px' }}>
+        <span style={{ fontSize:'9px', color:'#3d5a72', fontFamily:"'JetBrains Mono',monospace" }}>
           SCENARIO
         </span>
         <select
@@ -80,6 +70,7 @@ export default function BottomBar({
           <option value="supplier_breach">🟠 Supplier Bankruptcy</option>
         </select>
       </div>
+
     </div>
   )
 }

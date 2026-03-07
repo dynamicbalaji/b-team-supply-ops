@@ -1,115 +1,244 @@
-import { useState, useCallback } from 'react'
-import Nav from './components/Nav'
+import { useState, useRef, useCallback } from 'react'
+import Nav          from './components/Nav'
 import CrisisBanner from './components/CrisisBanner'
-import LeftPanel from './components/left/LeftPanel'
-import RightPanel from './components/right/RightPanel'
-import BottomBar from './components/BottomBar'
-import { useTicker } from './hooks/useTicker'
+import LeftPanel    from './components/left/LeftPanel'
+import RightPanel   from './components/right/RightPanel'
+import BottomBar    from './components/BottomBar'
+import { useTicker }                              from './hooks/useTicker'
+import { runManualMode, runExecutionCascade }     from './utils/manualMode'
 
-// ─── Global initial state ────────────────────────────────────────────────────
+// ─── Agent lookup maps ────────────────────────────────────────────────────────
+const AGENT_CLASS = { log:'al', fin:'af', pro:'ap', sal:'as_', risk:'ar', orc:'orc' }
+const AGENT_COLOR = { log:'#00d4ff', fin:'#00e676', pro:'#ffb340', sal:'#9b5de5', risk:'#ff3b5c', orc:'#00d4ff' }
+const AGENT_LABEL = { log:'✈ LOGISTICS', fin:'💰 FINANCE', pro:'📦 PROCUREMENT', sal:'📧 SALES', risk:'⚠ RISK', orc:'🎯 ORCHESTRATOR' }
+
+// ─── Initial state ────────────────────────────────────────────────────────────
 const INITIAL_STATE = {
-  // Run
-  runId: null,
-  scenario: 'port_strike',
-  isRunning: false,
+  runId:      null,
+  scenario:   'port_strike',
+  isRunning:  false,
   isApproved: false,
-  phase: 0,          // 0–4 maps to phase strip
+  phase:      0,
   tickerStart: null,
 
-  // Agents (keyed by id)
   agents: {
-    log: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
-    fin: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
-    pro: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
-    sal: { status: 'STANDBY', statusClass: 'idle', confidence: 0, tool: 'idle', pulseOn: false },
+    log: { status:'STANDBY', statusClass:'idle', confidence:0, tool:'idle', pulseOn:false },
+    fin: { status:'STANDBY', statusClass:'idle', confidence:0, tool:'idle', pulseOn:false },
+    pro: { status:'STANDBY', statusClass:'idle', confidence:0, tool:'idle', pulseOn:false },
+    sal: { status:'STANDBY', statusClass:'idle', confidence:0, tool:'idle', pulseOn:false },
   },
-  riskAgent: { visible: false, text: '' },
+  riskAgent: { visible:false, text:'' },
 
-  // Chat
   messages: [],
 
-  // Map
-  mapRoute: '— Awaiting agents',
-  mapStatus: 'STANDBY',
+  mapRoute:       '— Awaiting agents',
+  mapStatus:      'STANDBY',
   mapStatusColor: '#ffb340',
-  truckPhase: 'blocked',   // 'blocked' | 'flying' | 'driving' | 'arrived'
+  truckPhase:     'blocked',
 
-  // Decision tab
   mcDistribution: null,
-  mcStats: { mean: 280000, p10: 241000, p90: 318000, ci: 0.94 },
+  mcStats: { mean:280000, p10:241000, p90:318000, ci:0.94 },
 
-  // Approval
   approvalVisible: false,
-  approvalData: null,
+  approvalData:    null,
 
-  // Audit
   auditItems: [],
 
-  // Metrics
   resolutionTime: null,
-  costSaved: null,
-  roiShipments: 200,
+  costSaved:      null,
+  roiShipments:   200,
 }
 
-// ─── App ─────────────────────────────────────────────────────────────────────
+// ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [state, setState] = useState(INITIAL_STATE)
+  const [state, setState]         = useState(INITIAL_STATE)
   const [activeTab, setActiveTab] = useState('map')
+  const timerRefs                 = useRef([])
 
-  // Live cost ticker — only runs when scenario is active
+  // Live cost ticker
   const tickerValue = useTicker(state.tickerStart)
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  // ── Universal SSE event handler ───────────────────────────────────────────
+  function handleSSEEvent(evt) {
+    setState(prev => {
+      switch (evt.type) {
 
-  function handleScenarioChange(scenario) {
-    setState(prev => ({ ...prev, scenario }))
+        case 'phase':
+          return { ...prev, phase: evt.phase }
+
+        case 'agent_state':
+          return {
+            ...prev,
+            agents: {
+              ...prev.agents,
+              [evt.agent]: {
+                status:      evt.status,
+                statusClass: evt.statusClass ?? 'working',
+                confidence:  evt.confidence  ?? prev.agents[evt.agent]?.confidence ?? 0,
+                tool:        evt.tool        ?? 'idle',
+                pulseOn:     evt.pulseOn     ?? false,
+              },
+            },
+          }
+
+        case 'message':
+        case 'execution': {
+          const s = Math.floor((Date.now() - (prev.tickerStart || Date.now())) / 1000)
+          const time = String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0')
+          return {
+            ...prev,
+            messages: [
+              ...prev.messages,
+              {
+                id:          Date.now() + Math.random(),
+                agent:       evt.agent,
+                agentClass:  AGENT_CLASS[evt.agent] || 'orc',
+                agentColor:  AGENT_COLOR[evt.agent] || '#00d4ff',
+                from:        evt.from  || AGENT_LABEL[evt.agent] || '?',
+                to:          evt.to    || '→ ORCHESTRATOR',
+                time,
+                text:        evt.text  || '',
+                tools:       evt.tools || [],
+                isStreaming: false,
+              },
+            ],
+          }
+        }
+
+        case 'token': {
+          const s = Math.floor((Date.now() - (prev.tickerStart || Date.now())) / 1000)
+          const time = String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0')
+          const msgs = [...prev.messages]
+          const last = msgs[msgs.length - 1]
+          if (last?.agent === evt.agent && last?.isStreaming) {
+            msgs[msgs.length - 1] = { ...last, text: last.text + evt.content }
+          } else {
+            msgs.push({
+              id: Date.now() + Math.random(),
+              agent: evt.agent,
+              agentClass: AGENT_CLASS[evt.agent] || 'orc',
+              agentColor: AGENT_COLOR[evt.agent] || '#00d4ff',
+              from: AGENT_LABEL[evt.agent] || '?',
+              to: '→ ORCHESTRATOR',
+              time,
+              text: evt.content || '',
+              tools: [],
+              isStreaming: true,
+            })
+          }
+          return { ...prev, messages: msgs }
+        }
+
+        case 'tool': {
+          const msgs = [...prev.messages]
+          const idx  = msgs.findLastIndex(m => m.agent === evt.agent)
+          if (idx >= 0) {
+            msgs[idx] = { ...msgs[idx], tools: [...msgs[idx].tools, `${evt.tool}()`], isStreaming: false }
+          }
+          if (evt.tool === 'run_monte_carlo' && evt.result?.distribution) {
+            return {
+              ...prev, messages: msgs,
+              mcDistribution: evt.result.distribution,
+              mcStats: { mean:evt.result.mean, p10:evt.result.p10, p90:evt.result.p90, ci:evt.result.ci },
+            }
+          }
+          return { ...prev, messages: msgs }
+        }
+
+        case 'risk_activated':
+          return { ...prev, riskAgent: { visible:true, text:evt.message } }
+
+        case 'approval_required':
+          return { ...prev, approvalVisible:true, approvalData:evt }
+
+        case 'map_update':
+          return {
+            ...prev,
+            mapStatus:      evt.status      ?? prev.mapStatus,
+            mapStatusColor: evt.statusColor ?? prev.mapStatusColor,
+            mapRoute:       evt.route       ?? prev.mapRoute,
+          }
+
+        case 'truck_phase':
+          return { ...prev, truckPhase: evt.truckPhase }
+
+        case 'audit':
+          return { ...prev, auditItems: [...prev.auditItems, evt] }
+
+        case 'metrics':
+          return {
+            ...prev,
+            resolutionTime: evt.resolutionTime ?? prev.resolutionTime,
+            costSaved:      evt.costSaved      ?? prev.costSaved,
+          }
+
+        case 'complete':
+          return {
+            ...prev,
+            isRunning:      false,
+            resolutionTime: evt.resolutionTime || evt.resolution_time || prev.resolutionTime,
+            costSaved:      evt.costSaved || (evt.saved ? '$' + Number(evt.saved).toLocaleString() : prev.costSaved),
+          }
+
+        default:
+          return prev
+      }
+    })
   }
 
-  function handleStartScenario() {
-    // No-op in Phase 2 — wired fully in Phase 4
+  // ── startScenario ─────────────────────────────────────────────────────────
+  function startScenario() {
+    timerRefs.current.forEach(clearTimeout)
+    timerRefs.current = []
+    setState(prev => ({
+      ...INITIAL_STATE,
+      scenario:    prev.scenario,
+      tickerStart: Date.now(),
+      isRunning:   true,
+    }))
+    // Small delay so React flushes state before first event fires
+    setTimeout(() => {
+      timerRefs.current = runManualMode(handleSSEEvent)
+    }, 50)
   }
 
-  function handleReset() {
+  // ── approveDecision — triggers execution cascade ──────────────────────────
+  function approveDecision() {
+    setState(prev => ({ ...prev, approvalVisible:false, isApproved:true }))
+    timerRefs.current.push(...runExecutionCascade(handleSSEEvent))
+  }
+
+  // ── rejectDecision ────────────────────────────────────────────────────────
+  function rejectDecision() {
+    setState(prev => ({ ...prev, approvalVisible:false }))
+  }
+
+  // ── resetScenario ─────────────────────────────────────────────────────────
+  function resetScenario() {
+    timerRefs.current.forEach(clearTimeout)
+    timerRefs.current = []
     setState(INITIAL_STATE)
     setActiveTab('map')
   }
 
-  function handleManualScript() {
-    alert(
-      'Manual Mode Script\n\n' +
-      '1. ORCHESTRATOR → ALL: "Crisis P0 — evaluate options"\n' +
-      '2. LOGISTICS: Air $450K + Hybrid $280K option. Recalls March 2024 LA strike.\n' +
-      '3. PROCUREMENT: Dallas spot buy, 80% qty, $380K\n' +
-      '4. FINANCE: Challenges $450K — customs +$50K → Monte Carlo → Hybrid wins 94% CI\n' +
-      '5. SALES: Apple accepts 36h extension, zero penalty\n' +
-      '6. RISK AGENT: LAX single point of failure — backup trigger H20\n' +
-      '7. FINANCE: Final proposal $280K + $20K reserve\n' +
-      '8. Click APPROVE → execution cascade fires'
-    )
+  // ── handleScenarioChange ──────────────────────────────────────────────────
+  function handleScenarioChange(scenario) {
+    setState(prev => ({ ...prev, scenario }))
   }
 
-  // Stable callback so useMapCanvas doesn't restart animation loop on every render
+  // ── Stable truck phase callback — prevents Leaflet hook re-init ───────────
   const handleTruckPhaseChange = useCallback((newPhase) => {
     setState(prev => ({ ...prev, truckPhase: newPhase }))
   }, [])
 
-  function handleApprove() {
-    setState(prev => ({ ...prev, approvalVisible: false, isApproved: true }))
-  }
-
-  function handleReject() {
-    setState(prev => ({ ...prev, approvalVisible: false }))
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       <Nav
         scenario={state.scenario}
         onScenarioChange={handleScenarioChange}
-        onStartScenario={handleStartScenario}
-        onReset={handleReset}
-        onManualScript={handleManualScript}
+        onStartScenario={startScenario}
+        onReset={resetScenario}
       />
 
       <CrisisBanner
@@ -121,7 +250,6 @@ export default function App() {
         <LeftPanel
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          // Map props
           scenario={state.scenario}
           mapRoute={state.mapRoute}
           mapStatus={state.mapStatus}
@@ -129,6 +257,8 @@ export default function App() {
           truckPhase={state.truckPhase}
           onTruckPhaseChange={handleTruckPhaseChange}
           phase={state.phase}
+          mcDistribution={state.mcDistribution}
+          mcStats={state.mcStats}
         />
 
         <RightPanel
@@ -137,8 +267,8 @@ export default function App() {
           messages={state.messages}
           approvalVisible={state.approvalVisible}
           approvalData={state.approvalData}
-          onApprove={handleApprove}
-          onReject={handleReject}
+          onApprove={approveDecision}
+          onReject={rejectDecision}
         />
       </div>
 
