@@ -221,8 +221,22 @@ export default function App() {
     const runId = state.runId
     setState(prev => ({ ...prev, approvalVisible:false, isApproved:true }))
     if (runId) {
-      try { await fetch(`${import.meta.env.VITE_API_URL}/api/runs/${runId}/approve`, { method:'POST' }) }
-      catch (err) { timerRefs.current.push(...runExecutionCascade(handleSSEEvent)) }
+      try {
+        const approveRes = await fetch(`${import.meta.env.VITE_API_URL}/api/runs/${runId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved: true, decision: 'hybrid', run_id: runId }),
+        })
+        if (!approveRes.ok) {
+          const errBody = await approveRes.text()
+          console.warn('[approve] backend error:', approveRes.status, errBody)
+          // Fall back to local cascade if backend approve fails
+          timerRefs.current.push(...runExecutionCascade(handleSSEEvent))
+        }
+      } catch (err) {
+        console.warn('[approve] fetch failed:', err.message)
+        timerRefs.current.push(...runExecutionCascade(handleSSEEvent))
+      }
     } else {
       timerRefs.current.push(...runExecutionCascade(handleSSEEvent))
     }
