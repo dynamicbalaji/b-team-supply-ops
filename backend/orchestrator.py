@@ -27,8 +27,10 @@ USE_LIVE_AGENTS: bool = (
     and settings.gemini_api_key != "your_gemini_api_key_here"
 )
 
-# ── In-memory run registry ───────────────────────────────────────────────
-# Phase 3 moves this to TursoDB.
+# ── Run registry — in-memory primary, TursoDB async shadow write ──────────
+# In-memory dict is the source of truth during a run (fast, no latency).
+# TursoDB receives an async fire-and-forget write on every status change
+# so run history survives restarts and is queryable after the demo.
 _runs: dict[str, dict] = {}
 
 
@@ -37,20 +39,39 @@ def get_run(run_id: str) -> dict | None:
 
 
 def create_run(run_id: str, scenario: ScenarioType) -> dict:
+    mode = "live" if USE_LIVE_AGENTS else "hardcoded"
     run = {
         "run_id":   run_id,
         "scenario": scenario,
         "status":   RunStatus.PENDING,
         "approved": False,
-        "mode":     "live" if USE_LIVE_AGENTS else "hardcoded",
+        "mode":     mode,
     }
     _runs[run_id] = run
+    # Shadow-write to TursoDB (fire-and-forget — never blocks the run)
+    try:
+        import turso_client
+        if turso_client.is_configured():
+            asyncio.create_task(
+                turso_client.create_run(run_id, scenario.value, mode)
+            )
+    except Exception:
+        pass
     return run
 
 
 def set_run_status(run_id: str, status: RunStatus) -> None:
     if run_id in _runs:
         _runs[run_id]["status"] = status
+    # Shadow-write to TursoDB
+    try:
+        import turso_client
+        if turso_client.is_configured():
+            asyncio.create_task(
+                turso_client.update_run_status(run_id, status.value)
+            )
+    except Exception:
+        pass
 
 
 # ── Scenario entry point ─────────────────────────────────────────────────

@@ -72,13 +72,20 @@ log = logging.getLogger("resolveiq.main")
 async def lifespan(app: FastAPI):
     log.info("🚀 ResolveIQ backend starting...")
     from agents.base import active_model_chain
+    import turso_client
     chain    = active_model_chain()
     redis_ok = await redis_client.health_check()
+    turso_ok = await turso_client.init_schema()   # creates tables + seeds data
 
     if redis_ok:
         log.info("✅ Redis connected")
     else:
         log.warning("⚠️  Redis unreachable — check .env UPSTASH_REDIS_* values")
+
+    if turso_ok:
+        log.info("✅ TursoDB connected — persistent memory active")
+    else:
+        log.warning("⚠️  TursoDB not configured — using in-memory fallbacks (demo mode)")
 
     key_set = bool(settings.gemini_api_key and settings.gemini_api_key != "your_gemini_api_key_here")
     log.info("🤖 Agent mode    : %s",
@@ -130,8 +137,10 @@ async def health():
     model_chain: the ordered list of models that will be tried on each agent call.
     agent_mode: "live" (real Gemini) or "hardcoded" (Phase 1 fallback).
     """
+    import turso_client
     from agents.base import active_model_chain
     redis_ok  = await redis_client.health_check()
+    turso_ok  = await turso_client.health_check()
     gemini_ok = bool(settings.gemini_api_key and settings.gemini_api_key != "your_gemini_api_key_here")
     chain     = active_model_chain()
     return {
@@ -141,6 +150,7 @@ async def health():
         "agent_mode":   "live" if orchestrator.USE_LIVE_AGENTS else "hardcoded",
         "model_chain":  chain,
         "model_chain_length": len(chain),
+        "turso":        turso_ok,
         "env":          settings.env,
     }
 
@@ -201,6 +211,23 @@ async def get_run(run_id: str):
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return run
+
+
+@app.get("/api/runs/history", tags=["Runs"])
+async def run_history(limit: int = 20):
+    """
+    Returns the N most recent completed runs from TursoDB.
+    Falls back to the in-memory _runs dict when TursoDB is not configured.
+    Useful for the judge panel showing "X crises resolved today".
+    """
+    import turso_client
+    if turso_client.is_configured():
+        return {"runs": await turso_client.list_recent_runs(limit)}
+    # In-memory fallback
+    from orchestrator import _runs
+    recent = sorted(_runs.values(), key=lambda r: r.get("run_id", ""), reverse=True)[:limit]
+    return {"runs": [{"run_id": r["run_id"], "scenario": r.get("scenario",""),
+                      "status": r.get("status",""), "mode": r.get("mode","")} for r in recent]}
 
 
 @app.get("/api/stream/{run_id}", tags=["Streaming"])

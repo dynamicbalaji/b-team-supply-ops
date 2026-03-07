@@ -128,6 +128,24 @@ class ToolEvent(BaseModel):
     tool: str
     result: Any = None
 
+
+class ToolResultEvent(BaseModel):
+    """
+    Phase 3: rich tool-result bubble rendered directly in the chat log.
+
+    display.kind controls how the frontend renders it:
+      "table"       -- rows: [[label, value], ...] + optional badge
+      "memory"      -- episodic memory card (date / decision / savings)
+      "monte_carlo" -- inline histogram summary (mean / p10 / p90 + distribution)
+      "freight"     -- route comparison table
+    """
+    type: Literal["tool_result"] = "tool_result"
+    agent: AgentId
+    tool: str                # function name, e.g. "check_freight_rates"
+    display: dict            # {kind, title, rows?, badge?, ...}
+    # raw result still attached so existing handleTool() logic keeps working
+    result: Any = None
+
 class RiskActivatedEvent(BaseModel):
     type: Literal["risk_activated"] = "risk_activated"
     message: str

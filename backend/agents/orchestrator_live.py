@@ -192,12 +192,44 @@ async def run_live_scenario(
         await _map(run_id, "AWAITING APPROVAL", "#ffb340")
 
         set_status_fn(run_id, RunStatus.AWAITING_APPROVAL)
+
+        safe_ctx = _safe_context_summary(run_context)
         await redis_client.set_run_state(run_id, {
             "run_id":   run_id,
             "scenario": scenario,
             "status":   RunStatus.AWAITING_APPROVAL,
-            "context":  _safe_context_summary(run_context),
+            "context":  safe_ctx,
         })
+
+        # ── Phase 3: Persist run context + new episodic memory ────────────
+        try:
+            import turso_client
+            if turso_client.is_configured():
+                # 1. Save full run context (enables post-run analytics)
+                await turso_client.save_run_context(run_id, run_context)
+
+                # 2. Write this run as a new episodic memory record
+                #    so future runs can recall it via memory_recall()
+                logistics = run_context.get("logistics", {})
+                finance   = run_context.get("finance", {})
+                if logistics.get("cost_usd") and finance.get("mc_result"):
+                    import time as _time
+                    mc    = finance["mc_result"]
+                    saved = sc.penalty_usd - logistics.get("cost_usd", 0)
+                    await turso_client.save_memory(
+                        memory_key     = f"run_{run_id[:8]}_{scenario.value}",
+                        scenario_type  = scenario.value,
+                        date_label     = _time.strftime("%B %Y"),
+                        crisis         = sc.crisis_title,
+                        decision       = f"Hybrid route — ${logistics['cost_usd'] // 1000}K / {logistics.get('transit_hours', 36)}h",
+                        outcome        = f"Resolved in {elapsed(start)}. MC confidence {int(mc.get('confidence_interval', 0.94) * 100)}%.",
+                        cost_usd       = logistics["cost_usd"],
+                        saved_usd      = max(saved, 0),
+                        key_learning   = f"Hybrid beat air-only by ~${finance.get('customs_surcharge', 0) // 1000}K customs surcharge.",
+                        confidence     = mc.get("confidence_interval", 0.94),
+                    )
+        except Exception as mem_exc:
+            print(f"   [orchestrator] TursoDB persist skipped: {mem_exc}")
 
     except Exception as e:
         print(f"❌ Live scenario error for {run_id}: {e}")

@@ -155,11 +155,28 @@ async def query_suppliers(
     location_hint: str = "",
 ) -> list[dict]:
     """
-    Returns available alternative suppliers for the scenario.
-    Adds small noise to quantities and costs.
+    Returns alternative suppliers for the scenario.
+
+    Phase 3: tries TursoDB first.
+    Falls back to in-memory _SUPPLIERS catalog (with ±5% noise).
     """
     await asyncio.sleep(0.25)
 
+    # ── Phase 3: TursoDB ──────────────────────────────────────────────────
+    try:
+        import turso_client
+        if turso_client.is_configured():
+            db_result = await turso_client.query_suppliers(scenario.value)
+            if db_result:
+                # Apply noise to costs so each run feels fresh
+                for s in db_result:
+                    if s["total_cost_usd"]:
+                        s["total_cost_usd"] = int(s["total_cost_usd"] * (1 + random.uniform(-0.05, 0.05)))
+                return db_result
+    except Exception:
+        pass
+
+    # ── In-memory fallback ────────────────────────────────────────────────
     suppliers = _SUPPLIERS.get(scenario, [])
     result = []
     for s in suppliers:
@@ -173,10 +190,24 @@ async def query_suppliers(
 
 async def query_contract_terms(scenario: ScenarioType) -> dict:
     """
-    Returns the contract terms for the scenario's customer.
-    Sales agent uses this to negotiate SLA amendments.
+    Returns contract terms for the scenario's customer.
+
+    Phase 3: tries TursoDB first.
+    Falls back to in-memory _CONTRACT_TERMS.
     """
     await asyncio.sleep(0.2)
+
+    # ── Phase 3: TursoDB ──────────────────────────────────────────────────
+    try:
+        import turso_client
+        if turso_client.is_configured():
+            result = await turso_client.query_contract(scenario.value)
+            if result:
+                return result
+    except Exception:
+        pass
+
+    # ── In-memory fallback ────────────────────────────────────────────────
     return _CONTRACT_TERMS.get(scenario, _CONTRACT_TERMS[ScenarioType.PORT_STRIKE])
 
 

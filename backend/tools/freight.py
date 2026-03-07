@@ -174,20 +174,40 @@ async def check_freight_rates(scenario: ScenarioType) -> dict:
 async def memory_recall(query: str) -> dict | None:
     """
     Searches episodic memory for a matching historical incident.
-    Returns the closest match or None if nothing relevant.
-    Simulates 150ms DB lookup.
+
+    Phase 3: tries TursoDB first (real persistent memory).
+    Falls back to in-memory _MEMORY_BANK when TursoDB is not configured,
+    so the demo works without any database credentials.
     """
     await asyncio.sleep(0.15)
 
-    query_lower = query.lower()
+    # ── Phase 3: TursoDB lookup ────────────────────────────────────────────
+    try:
+        import turso_client
+        if turso_client.is_configured():
+            query_lower = query.lower()
+            # Extract candidate keywords for DB LIKE search
+            keywords = [w for w in query_lower.split() if len(w) > 3]
+            # Derive scenario type from query keywords for fallback
+            if "port" in query_lower or "strike" in query_lower:
+                scenario_kw = "port_strike"
+            elif "customs" in query_lower or "shanghai" in query_lower:
+                scenario_kw = "customs_delay"
+            else:
+                scenario_kw = "supplier_breach"
+            result = await turso_client.recall_memory(keywords, scenario_kw)
+            if result:
+                return result
+    except Exception as exc:
+        pass  # Fall through to in-memory bank
 
-    # Simple keyword matching — Phase 3 replaces with TursoDB vector search
+    # ── In-memory fallback (always works) ─────────────────────────────────
+    query_lower = query.lower()
     for key, memory in _MEMORY_BANK.items():
         key_words = key.lower().replace("_", " ").split()
         if any(word in query_lower for word in key_words):
             return {"memory_key": key, **memory}
 
-    # Fuzzy fallback: match scenario type keywords
     if "port" in query_lower or "strike" in query_lower or "la" in query_lower:
         return {"memory_key": "LA_port_strike", **_MEMORY_BANK["LA_port_strike"]}
     if "customs" in query_lower or "shanghai" in query_lower or "china" in query_lower:

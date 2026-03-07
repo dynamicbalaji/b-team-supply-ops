@@ -418,3 +418,43 @@ def elapsed(start_time: float) -> str:
 def active_model_chain() -> list[str]:
     """Returns the current resolved chain — used by the /health endpoint."""
     return get_settings().model_chain
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Phase 3: Rich tool-result publisher
+# ─────────────────────────────────────────────────────────────────────────
+
+async def publish_tool_result(
+    run_id: str,
+    agent:  AgentId,
+    tool:   str,
+    raw:    dict | list | None,
+) -> None:
+    """
+    Formats raw tool output into a display shape and emits ToolResultEvent.
+
+    Emits TWO events:
+      1. ToolEvent    (type="tool")        — keeps agent card pill working (Phase 2 compat)
+      2. ToolResultEvent (type="tool_result") — new rich bubble in the chat log (Phase 3)
+
+    Agents should call this instead of publish_tool() directly.
+    """
+    from tools.registry import format_tool_result
+    from models import ToolResultEvent
+
+    # 1. Legacy event — keeps tp-log / tp-fin pill updating
+    await redis_client.publish(run_id, {
+        "type":   "tool",
+        "agent":  agent,
+        "tool":   tool,
+        "result": raw,
+    })
+
+    # 2. Rich display event — new in Phase 3
+    display = format_tool_result(tool, raw)
+    await redis_client.publish(run_id, ToolResultEvent(
+        agent=agent,
+        tool=tool,
+        display=display,
+        result=raw,
+    ).model_dump())
