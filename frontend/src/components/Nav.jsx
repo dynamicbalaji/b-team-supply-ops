@@ -1,9 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
 
 export default function Nav({ scenario, onScenarioChange, onStartScenario, onReset, onManualScript }) {
-  const [dropOpen, setDropOpen] = useState(false)
+  const [dropOpen, setDropOpen]         = useState(false)
+  const [backendStatus, setBackendStatus] = useState('checking')
   const dropRef = useRef(null)
-  const btnRef = useRef(null)
+  const btnRef  = useRef(null)
+
+  // Check backend health on mount
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL}/health`)
+      .then(r => r.json())
+      .then(d => setBackendStatus(d.status === 'ok' ? 'live' : 'error'))
+      .catch(() => setBackendStatus('manual'))
+  }, [])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -26,6 +35,8 @@ export default function Nav({ scenario, onScenarioChange, onStartScenario, onRes
     onStartScenario()
   }
 
+  const isLive = backendStatus === 'live'
+
   return (
     <nav className="nav">
       {/* Logo */}
@@ -44,6 +55,27 @@ export default function Nav({ scenario, onScenarioChange, onStartScenario, onRes
       <div className="nav-r">
         <div className="pill">SC-2024-8891</div>
         <div className="pill" style={{ color: '#ffb340', borderColor: '#2a3820' }}>48h WINDOW</div>
+
+        {/* Backend status badge */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          padding: '3px 8px',
+          borderRadius: '4px',
+          border: `1px solid ${isLive ? 'rgba(0,230,118,0.25)' : 'rgba(255,179,64,0.25)'}`,
+          background: isLive ? 'rgba(0,230,118,0.08)' : 'rgba(255,179,64,0.08)',
+        }}>
+          <span style={{
+            fontSize: '9px',
+            fontFamily: "'JetBrains Mono', monospace",
+            color: isLive ? '#00e676' : '#ffb340',
+            letterSpacing: '0.05em',
+          }}>
+            {backendStatus === 'checking' ? '○ CONNECTING' : isLive ? '● LIVE' : '● MANUAL'}
+          </span>
+        </div>
+
         <button
           className="nbtn"
           ref={btnRef}
@@ -57,6 +89,26 @@ export default function Nav({ scenario, onScenarioChange, onStartScenario, onRes
       {/* Demo dropdown */}
       <div className={`drop${dropOpen ? ' open' : ''}`} ref={dropRef}>
         <div className="drop-title">Demo Controller</div>
+
+        {/* Mode indicator inside dropdown */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '6px 8px',
+          marginBottom: '8px',
+          borderRadius: '4px',
+          background: isLive ? 'rgba(0,230,118,0.08)' : 'rgba(255,179,64,0.08)',
+          border: `1px solid ${isLive ? 'rgba(0,230,118,0.2)' : 'rgba(255,179,64,0.2)'}`,
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: '9px',
+          color: isLive ? '#00e676' : '#ffb340',
+        }}>
+          {isLive
+            ? '● Connected to live backend'
+            : '● Manual mode — no backend detected'}
+        </div>
+
         <select
           className="dsel"
           value={scenario}

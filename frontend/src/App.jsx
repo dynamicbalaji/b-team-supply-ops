@@ -1,11 +1,12 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Nav          from './components/Nav'
 import CrisisBanner from './components/CrisisBanner'
 import LeftPanel    from './components/left/LeftPanel'
 import RightPanel   from './components/right/RightPanel'
 import BottomBar    from './components/BottomBar'
-import { useTicker }                              from './hooks/useTicker'
-import { runManualMode, runExecutionCascade }     from './utils/manualMode'
+import { useTicker }                          from './hooks/useTicker'
+import { useSSE }                             from './hooks/useSSE'
+import { runManualMode, runExecutionCascade } from './utils/manualMode'
 
 // ─── Agent lookup maps ────────────────────────────────────────────────────────
 const AGENT_CLASS = { log:'al', fin:'af', pro:'ap', sal:'as_', risk:'ar', orc:'orc' }
@@ -59,43 +60,51 @@ export default function App() {
   const tickerValue = useTicker(state.tickerStart)
 
   // ── Universal SSE event handler ───────────────────────────────────────────
-  function handleSSEEvent(evt) {
+  // Wrapped in useCallback + stored in a ref so manualMode timers and the SSE
+  // hook always call the SAME function reference — prevents duplicate firings.
+  const handleSSEEvent = useCallback((evt) => {
     setState(prev => {
       switch (evt.type) {
 
         case 'phase':
           return { ...prev, phase: evt.phase }
 
-        case 'agent_state':
+        case 'agent_state': {
+          // Guard: only update known agents
+          if (!prev.agents[evt.agent]) return prev
           return {
             ...prev,
             agents: {
               ...prev.agents,
               [evt.agent]: {
-                status:      evt.status,
+                status:      evt.status      ?? 'STANDBY',
                 statusClass: evt.statusClass ?? 'working',
-                confidence:  evt.confidence  ?? prev.agents[evt.agent]?.confidence ?? 0,
+                confidence:  evt.confidence  ?? prev.agents[evt.agent].confidence,
                 tool:        evt.tool        ?? 'idle',
                 pulseOn:     evt.pulseOn     ?? false,
               },
             },
           }
+        }
 
         case 'message':
         case 'execution': {
-          const s = Math.floor((Date.now() - (prev.tickerStart || Date.now())) / 1000)
+          const s    = Math.floor((Date.now() - (prev.tickerStart || Date.now())) / 1000)
           const time = String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0')
+          // Deduplicate: skip if last message has same agent + same text
+          const last = prev.messages[prev.messages.length - 1]
+          if (last && last.agent === evt.agent && last.text === (evt.text || '')) return prev
           return {
             ...prev,
             messages: [
               ...prev.messages,
               {
-                id:          Date.now() + Math.random(),
+                id:          `${evt.agent}-${Date.now()}`,
                 agent:       evt.agent,
                 agentClass:  AGENT_CLASS[evt.agent] || 'orc',
                 agentColor:  AGENT_COLOR[evt.agent] || '#00d4ff',
-                from:        evt.from  || AGENT_LABEL[evt.agent] || '?',
-                to:          evt.to    || '→ ORCHESTRATOR',
+                from:        evt.from || AGENT_LABEL[evt.agent] || evt.agent?.toUpperCase() || '?',
+                to:          evt.to   || '→ ORCHESTRATOR',
                 time,
                 text:        evt.text  || '',
                 tools:       evt.tools || [],
@@ -106,7 +115,7 @@ export default function App() {
         }
 
         case 'token': {
-          const s = Math.floor((Date.now() - (prev.tickerStart || Date.now())) / 1000)
+          const s    = Math.floor((Date.now() - (prev.tickerStart || Date.now())) / 1000)
           const time = String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0')
           const msgs = [...prev.messages]
           const last = msgs[msgs.length - 1]
@@ -114,15 +123,15 @@ export default function App() {
             msgs[msgs.length - 1] = { ...last, text: last.text + evt.content }
           } else {
             msgs.push({
-              id: Date.now() + Math.random(),
-              agent: evt.agent,
+              id:         `${evt.agent}-stream-${Date.now()}`,
+              agent:      evt.agent,
               agentClass: AGENT_CLASS[evt.agent] || 'orc',
               agentColor: AGENT_COLOR[evt.agent] || '#00d4ff',
-              from: AGENT_LABEL[evt.agent] || '?',
-              to: '→ ORCHESTRATOR',
+              from:       AGENT_LABEL[evt.agent] || evt.agent?.toUpperCase() || '?',
+              to:         '→ ORCHESTRATOR',
               time,
-              text: evt.content || '',
-              tools: [],
+              text:       evt.content || '',
+              tools:      [],
               isStreaming: true,
             })
           }
@@ -133,7 +142,12 @@ export default function App() {
           const msgs = [...prev.messages]
           const idx  = msgs.findLastIndex(m => m.agent === evt.agent)
           if (idx >= 0) {
-            msgs[idx] = { ...msgs[idx], tools: [...msgs[idx].tools, `${evt.tool}()`], isStreaming: false }
+            const existing = msgs[idx].tools || []
+            const toolStr  = `${evt.tool}()`
+            // Deduplicate tools too
+            if (!existing.includes(toolStr)) {
+              msgs[idx] = { ...msgs[idx], tools: [...existing, toolStr], isStreaming: false }
+            }
           }
           if (evt.tool === 'run_monte_carlo' && evt.result?.distribution) {
             return {
@@ -184,28 +198,83 @@ export default function App() {
           return prev
       }
     })
-  }
+  }, []) // stable — no deps, reads all state via the `prev` closure inside setState
 
-  // ── startScenario ─────────────────────────────────────────────────────────
-  function startScenario() {
+  // ── SSE hook ──────────────────────────────────────────────────────────────
+  const { connect, disconnect } = useSSE(handleSSEEvent)
+
+  // ── Cleanup on unmount ────────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      disconnect()
+      timerRefs.current.forEach(clearTimeout)
+    }
+  }, [disconnect])
+
+  // ── Keep backend awake (ping every 10 min for Render free tier) ───────────
+  useEffect(() => {
+    const ping = setInterval(() => {
+      fetch(`${import.meta.env.VITE_API_URL}/health`).catch(() => {})
+    }, 10 * 60 * 1000)
+    return () => clearInterval(ping)
+  }, [])
+
+  // ── startScenario — tries live backend, falls back to manual mode ─────────
+  async function startScenario() {
     timerRefs.current.forEach(clearTimeout)
     timerRefs.current = []
-    setState(prev => ({
+    disconnect()
+
+    // Capture scenario before the async gap
+    const scenario = state.scenario
+
+    setState({
       ...INITIAL_STATE,
-      scenario:    prev.scenario,
+      scenario,
       tickerStart: Date.now(),
       isRunning:   true,
-    }))
-    // Small delay so React flushes state before first event fires
-    setTimeout(() => {
-      timerRefs.current = runManualMode(handleSSEEvent)
-    }, 50)
+    })
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/runs`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ scenario }),
+        signal:  AbortSignal.timeout(5000),
+      })
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const { run_id } = await res.json()
+
+      setState(prev => ({ ...prev, runId: run_id }))
+      connect(run_id)
+      console.log('✅ Connected to live backend, run_id:', run_id)
+
+    } catch (err) {
+      console.warn('⚠ Backend unavailable, falling back to manual mode:', err.message)
+      setTimeout(() => {
+        timerRefs.current = runManualMode(handleSSEEvent)
+      }, 50)
+    }
   }
 
-  // ── approveDecision — triggers execution cascade ──────────────────────────
-  function approveDecision() {
+  // ── approveDecision ───────────────────────────────────────────────────────
+  async function approveDecision() {
+    const runId = state.runId
     setState(prev => ({ ...prev, approvalVisible:false, isApproved:true }))
-    timerRefs.current.push(...runExecutionCascade(handleSSEEvent))
+
+    if (runId) {
+      try {
+        await fetch(`${import.meta.env.VITE_API_URL}/api/runs/${runId}/approve`, {
+          method: 'POST',
+        })
+      } catch (err) {
+        console.warn('Approve POST failed, running execution cascade locally:', err)
+        timerRefs.current.push(...runExecutionCascade(handleSSEEvent))
+      }
+    } else {
+      timerRefs.current.push(...runExecutionCascade(handleSSEEvent))
+    }
   }
 
   // ── rejectDecision ────────────────────────────────────────────────────────
@@ -217,6 +286,7 @@ export default function App() {
   function resetScenario() {
     timerRefs.current.forEach(clearTimeout)
     timerRefs.current = []
+    disconnect()
     setState(INITIAL_STATE)
     setActiveTab('map')
   }
@@ -226,7 +296,7 @@ export default function App() {
     setState(prev => ({ ...prev, scenario }))
   }
 
-  // ── Stable truck phase callback — prevents Leaflet hook re-init ───────────
+  // ── Stable truck phase callback ───────────────────────────────────────────
   const handleTruckPhaseChange = useCallback((newPhase) => {
     setState(prev => ({ ...prev, truckPhase: newPhase }))
   }, [])
