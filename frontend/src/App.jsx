@@ -38,7 +38,7 @@ const INITIAL_STATE = {
   truckPhase:'blocked', mcDistribution:null,
   mcStats:{ mean:280000, p10:241000, p90:318000, ci:0.94 },
   approvalVisible:false, approvalData:null, auditItems:[],
-  resolutionTime:null, costSaved:null, roiShipments:200,
+  resolutionTime:null, costSaved:null,
 }
 
 export default function App() {
@@ -68,7 +68,9 @@ export default function App() {
         [k]: {
           status:      evt.status ?? 'STANDBY',
           statusClass,
-          confidence:  typeof evt.confidence === 'number' ? evt.confidence : prev[k].confidence,
+          confidence:  typeof evt.confidence === 'number'
+              ? (evt.confidence <= 1 ? Math.round(evt.confidence * 100) : Math.round(evt.confidence))
+              : prev[k].confidence,
           tool:        evt.tool ?? 'idle',
           pulseOn:     evt.pulseOn ?? evt.pulsing ?? false,
         },
@@ -160,17 +162,21 @@ export default function App() {
         case 'audit':
           return { ...prev, auditItems:[...prev.auditItems, evt] }
 
-        case 'metrics':
-          return { ...prev,
-            resolutionTime: evt.resolutionTime ?? prev.resolutionTime,
-            costSaved:      evt.costSaved      ?? prev.costSaved,
-          }
+        case 'metrics': {
+          console.log('[metrics] raw event:', JSON.stringify(evt))
+          const rt = evt.resolutionTime ?? evt.resolution_time ?? evt.time ?? prev.resolutionTime
+          const cs = evt.costSaved ?? evt.cost_saved
+            ?? (evt.saved != null ? '$' + Number(evt.saved).toLocaleString() : prev.costSaved)
+          return { ...prev, resolutionTime: rt, costSaved: cs }
+        }
 
-        case 'complete':
-          return { ...prev, isRunning:false,
-            resolutionTime: evt.resolutionTime || evt.resolution_time || prev.resolutionTime,
-            costSaved: evt.costSaved || (evt.saved ? '$'+Number(evt.saved).toLocaleString() : prev.costSaved),
-          }
+        case 'complete': {
+          console.log('[complete] raw event:', JSON.stringify(evt))
+          const rt = evt.resolutionTime ?? evt.resolution_time ?? evt.time ?? prev.resolutionTime
+          const cs = evt.costSaved ?? evt.cost_saved
+            ?? (evt.saved != null ? '$' + Number(evt.saved).toLocaleString() : prev.costSaved)
+          return { ...prev, isRunning:false, resolutionTime: rt, costSaved: cs }
+        }
 
         default:
           return prev
@@ -276,8 +282,7 @@ export default function App() {
       <BottomBar
         scenario={state.scenario} onScenarioChange={handleScenarioChange}
         resolutionTime={state.resolutionTime} costSaved={state.costSaved}
-        msgCount={state.messages.length} roiShipments={state.roiShipments}
-        onRoiChange={(v) => setState(prev => ({ ...prev, roiShipments:v }))}
+        msgCount={state.messages.length}
       />
     </>
   )
