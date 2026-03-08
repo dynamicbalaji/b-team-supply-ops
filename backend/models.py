@@ -188,6 +188,25 @@ class ErrorEvent(BaseModel):
 class PingEvent(BaseModel):
     type: Literal["ping"] = "ping"
 
+class AuditEvent(BaseModel):
+    """
+    Emitted by each LangGraph node after a significant decision step.
+    Accumulated in orchestrator._runs[run_id]["audit_trail"] and streamed
+    via SSE so AuditTab can build a live timeline without hardcoded data.
+
+    Call audit_helpers.publish_audit_event() inside each agent graph node
+    to emit these. The REST endpoint GET /api/runs/{id}/audit-trail reads
+    the accumulated audit_trail list from the in-memory run registry.
+    """
+    type:        Literal["audit"] = "audit"
+    time_label:  str              # "00:12 — Route Options"
+    agent_color: str              # "#00d4ff"
+    agent_label: str              # "🔵 Logistics Agent"
+    description: str
+    data:        str            = ""
+    memory_note: Optional[str] = None
+    elapsed_s:   int           = 0
+
 
 # ── A2A Task models (§4.1 A2A Protocol Specification v0.3.0) ─────────────
 #
