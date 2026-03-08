@@ -15,15 +15,22 @@ const AGENT_LABEL = { log:'✈ LOGISTICS', fin:'💰 FINANCE', pro:'📦 PROCURE
 
 // Backend sends full names — map to short keys used internally
 const AGENT_KEY_MAP = {
-  logistics:   'log',
-  finance:     'fin',
-  procurement: 'pro',
-  sales:       'sal',
-  risk:        'risk',
-  orchestrator:'orc',
+  logistics:    'log',
+  finance:      'fin',
+  procurement:  'pro',
+  sales:        'sal',
+  risk:         'risk',
+  'risk agent': 'risk',
+  riskagent:    'risk',
+  orchestrator: 'orc',
   // pass-through for already-short keys
-  log:'log', fin:'fin', pro:'pro', sal:'sal',
+  log:'log', fin:'fin', pro:'pro', sal:'sal', orc:'orc',
 }
+
+// Valid agent keys that have card slots
+const VALID_AGENTS = new Set(['log','fin','pro','sal'])
+// Agents handled separately (not card-based)
+const SIDE_AGENTS = new Set(['risk','orc'])
 
 const INITIAL_AGENTS = {
   log: { status:'STANDBY', statusClass:'idle', confidence:0, tool:'idle', pulseOn:false },
@@ -48,7 +55,7 @@ export default function App() {
   const [state,     setState]     = useState(INITIAL_STATE)
   const [activeTab, setActiveTab] = useState('map')
   const timerRefs = useRef([])
-  const tickerValue = useTicker(state.tickerStart)
+  const tickerValue = useTicker(state.tickerStart, state.isApproved)
   const { theme, toggle: toggleTheme } = useTheme()
 
   const handleSSEEvent = useCallback((rawEvt) => {
@@ -57,6 +64,13 @@ export default function App() {
     // ── AGENT STATE → isolated setter, never touches main state ──────────
     if (evt.type === 'agent_state') {
       const k = AGENT_KEY_MAP[evt.agent] || evt.agent
+      // Risk agent updates show in the RiskAgent card, not the 4-grid
+      if (k === 'risk') {
+        if (evt.status && evt.status !== 'STANDBY') {
+          setRiskAgent(prev => ({ ...prev, visible: true, text: evt.tool || evt.status }))
+        }
+        return
+      }
       if (!INITIAL_AGENTS.hasOwnProperty(k)) {
         console.warn('[agent_state] unknown agent key:', evt.agent, '→', k)
         return
@@ -166,17 +180,25 @@ export default function App() {
 
         case 'metrics': {
           console.log('[metrics] raw event:', JSON.stringify(evt))
-          const rt = evt.resolutionTime ?? evt.resolution_time ?? evt.time ?? prev.resolutionTime
-          const cs = evt.costSaved ?? evt.cost_saved
-            ?? (evt.saved != null ? '$' + Number(evt.saved).toLocaleString() : prev.costSaved)
+          const rawRt = evt.resolutionTime ?? evt.resolution_time ?? evt.time ?? prev.resolutionTime
+          const rt = typeof rawRt === 'number'
+            ? `${Math.floor(rawRt / 60)}m ${String(rawRt % 60).padStart(2,'0')}s`
+            : rawRt
+          const savedRaw = evt.saved_usd ?? evt.costSaved ?? evt.cost_saved ?? evt.saved
+          const cs = savedRaw != null ? Number(savedRaw) : prev.costSaved
           return { ...prev, resolutionTime: rt, costSaved: cs }
         }
 
         case 'complete': {
           console.log('[complete] raw event:', JSON.stringify(evt))
-          const rt = evt.resolutionTime ?? evt.resolution_time ?? evt.time ?? prev.resolutionTime
-          const cs = evt.costSaved ?? evt.cost_saved
-            ?? (evt.saved != null ? '$' + Number(evt.saved).toLocaleString() : prev.costSaved)
+          // resolution_time may come as seconds int (19) or string ("00:19")
+          const rawRt = evt.resolutionTime ?? evt.resolution_time ?? evt.time ?? prev.resolutionTime
+          const rt = typeof rawRt === 'number'
+            ? `${Math.floor(rawRt / 60)}m ${String(rawRt % 60).padStart(2,'0')}s`
+            : rawRt
+          // saved_usd is the canonical backend field
+          const savedRaw = evt.saved_usd ?? evt.costSaved ?? evt.cost_saved ?? evt.saved
+          const cs = savedRaw != null ? Number(savedRaw) : prev.costSaved
           return { ...prev, isRunning:false, resolutionTime: rt, costSaved: cs }
         }
 
@@ -277,6 +299,8 @@ export default function App() {
           messages={state.messages}
           resolutionTime={state.resolutionTime}
           costSaved={state.costSaved}
+          isRunning={state.isRunning}
+          approvalData={state.approvalData}
         />
         <RightPanel
           agents={agents} riskAgent={riskAgent}

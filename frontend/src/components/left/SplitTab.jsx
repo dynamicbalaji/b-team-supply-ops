@@ -6,11 +6,19 @@ const AGENT_LABEL  = { log:'🔵 Logistics Agent', fin:'🟢 Finance Agent', pro
 const AGENT_BG     = { log:'rgba(0,212,255,.04)', fin:'rgba(57,217,138,.04)', pro:'rgba(255,179,64,.04)', sal:'rgba(155,93,229,.04)', risk:'rgba(255,59,92,.04)', orc:'rgba(0,212,255,.04)' }
 const AGENT_BORDER = { log:'rgba(0,212,255,.18)', fin:'rgba(57,217,138,.18)', pro:'rgba(255,179,64,.18)', sal:'rgba(155,93,229,.18)', risk:'rgba(255,59,92,.18)', orc:'rgba(0,212,255,.18)' }
 
-// Traditional: painfully slow — one email every ~2s, dragging out to 12s total
+// Traditional: slow — one email every ~2s
 const TRAD_DELAYS = [0, 2200, 4800, 7500, 10800]
-
-// AI: blazing fast — all messages within 3s total, ~400ms apart
+// AI: fast — one message every 420ms
 const aiDelay = (i) => i * 420
+
+function formatCost(raw) {
+  if (raw == null) return null
+  const num = typeof raw === 'number' ? raw : Number(String(raw).replace(/[$,]/g, ''))
+  if (isNaN(num)) return String(raw)
+  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`
+  if (num >= 1_000)     return `$${Math.round(num / 1000)}K`
+  return `$${num}`
+}
 
 export default function SplitTab({ scenario, messages, resolutionTime, costSaved, isRunning }) {
   const s  = SCENARIOS[scenario] || SCENARIOS.port_strike
@@ -19,18 +27,21 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
     ai:   s.ai   || { resolution: '—', summary: '' },
   }
 
-  const [visibleTrad, setVisibleTrad] = useState(0)   // how many trad emails visible
-  const [visibleAI,   setVisibleAI]   = useState(0)   // how many AI messages visible
+  const [visibleTrad, setVisibleTrad] = useState(0)
+  const [visibleAI,   setVisibleAI]   = useState(0)
   const [replaying,   setReplaying]   = useState(false)
-  const timers   = useRef([])
+  const timers     = useRef([])
   const startedRef = useRef(false)
 
   const hasLiveMessages = messages && messages.length > 0
   const displayMessages = hasLiveMessages ? messages.filter(m => m.agent !== undefined) : []
-  const aiTime      = resolutionTime || sc.ai.resolution
-  const everStarted = isRunning || !!resolutionTime || hasLiveMessages
+  const aiTime          = resolutionTime || sc.ai.resolution
+  const everStarted     = isRunning || !!resolutionTime || hasLiveMessages
 
-  const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = [] }
+  const clearTimers = useCallback(() => {
+    timers.current.forEach(clearTimeout)
+    timers.current = []
+  }, [])
 
   const runReplay = useCallback((msgs) => {
     clearTimers()
@@ -38,39 +49,55 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
     setVisibleAI(0)
     setReplaying(true)
 
-    // Schedule traditional emails — slow
+    // Traditional emails — slow drip
     TRAD_DELAYS.forEach((delay, i) => {
       timers.current.push(setTimeout(() => setVisibleTrad(i + 1), delay))
     })
 
-    // Schedule AI messages — fast (all done before 3rd trad email appears)
+    // AI messages — fast burst
     msgs.forEach((_, i) => {
       timers.current.push(setTimeout(() => setVisibleAI(i + 1), aiDelay(i)))
     })
 
-    // Mark replay done after all timers
     const total = Math.max(
       TRAD_DELAYS[TRAD_DELAYS.length - 1] + 600,
-      aiDelay(msgs.length - 1) + 600
+      msgs.length > 0 ? aiDelay(msgs.length - 1) + 600 : 600
     )
     timers.current.push(setTimeout(() => setReplaying(false), total))
-  }, [])
+  }, [clearTimers])
 
-  // Auto-run when scenario first starts
+  // On mount: always start traditional emails immediately so tab is never empty
   useEffect(() => {
-    if (isRunning && !startedRef.current) {
-      startedRef.current = true
+    startedRef.current = true
+    if (hasLiveMessages || resolutionTime) {
+      // Scenario already done — replay everything
+      runReplay(displayMessages)
+    } else {
+      // No scenario yet — just drip traditional emails as a preview
+      TRAD_DELAYS.forEach((delay, i) => {
+        timers.current.push(setTimeout(() => setVisibleTrad(i + 1), delay))
+      })
+    }
+    return () => clearTimers()
+  }, []) // eslint-disable-line
+
+  // When scenario starts running, restart full replay
+  useEffect(() => {
+    if (isRunning) {
       runReplay(displayMessages.length > 0 ? displayMessages : [])
     }
-    if (!isRunning && !resolutionTime) {
-      startedRef.current = false
+    if (!isRunning && !resolutionTime && !hasLiveMessages) {
       clearTimers()
       setVisibleTrad(0)
       setVisibleAI(0)
+      // Restart trad email preview
+      TRAD_DELAYS.forEach((delay, i) => {
+        timers.current.push(setTimeout(() => setVisibleTrad(i + 1), delay))
+      })
     }
   }, [isRunning]) // eslint-disable-line
 
-  // When messages arrive mid-run, extend AI visibility to cover new ones
+  // As new AI messages arrive mid-run, extend visibility
   useEffect(() => {
     if (startedRef.current && displayMessages.length > visibleAI) {
       setVisibleAI(displayMessages.length)
@@ -83,42 +110,35 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
 
       {/* ── Shared replay bar ── */}
-      {everStarted && (
-        <div style={{
-          display:'flex', justifyContent:'space-between', alignItems:'center',
-          padding:'5px 14px', borderBottom:'1px solid #1d2d40',
-          background:'#090e15', flexShrink:0,
-        }}>
-          {/* Speed legend */}
-          <div style={{ display:'flex', gap:'14px' }}>
-            <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'#ff3b5c', opacity:.7 }}>
-              🐌 Traditional: ~12s / step
-            </span>
-            <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'#39d98a', opacity:.7 }}>
-              ⚡ AI: ~0.4s / step
-            </span>
-          </div>
-          <button
-            onClick={handleReplay}
-            disabled={replaying}
-            style={{
-              display:'flex', alignItems:'center', gap:'5px',
-              background: replaying ? 'transparent' : 'transparent',
-              border:`1px solid ${replaying ? '#1d2d40' : '#1d2d40'}`,
-              borderRadius:'4px',
-              color: replaying ? '#3d5a72' : '#7aa0be',
-              cursor: replaying ? 'not-allowed' : 'pointer',
-              padding:'3px 10px', fontSize:'9px',
-              fontFamily:"'JetBrains Mono',monospace", letterSpacing:'.08em',
-              transition:'all .2s',
-            }}
-            onMouseEnter={e => { if (!replaying) e.currentTarget.style.cssText += 'color:#00d4ff;border-color:#00d4ff55;' }}
-            onMouseLeave={e => { if (!replaying) e.currentTarget.style.cssText += 'color:#7aa0be;border-color:#1d2d40;' }}
-          >
-            {replaying ? '⏵ replaying…' : '↺ REPLAY BOTH PANELS'}
-          </button>
+      <div style={{
+        display:'flex', justifyContent:'space-between', alignItems:'center',
+        padding:'5px 14px', borderBottom:'1px solid #1d2d40',
+        background:'#090e15', flexShrink:0,
+      }}>
+        <div style={{ display:'flex', gap:'14px' }}>
+          <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'#ff3b5c', opacity:.8 }}>
+            🐌 Traditional: ~12s / step
+          </span>
+          <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'#39d98a', opacity:.8 }}>
+            ⚡ AI: ~0.4s / step
+          </span>
         </div>
-      )}
+        <button
+          onClick={handleReplay}
+          disabled={replaying}
+          style={{
+            background:'transparent', border:`1px solid ${replaying ? '#1d2d40' : '#1d2d40'}`,
+            borderRadius:'4px', color: replaying ? '#3d5a72' : '#7aa0be',
+            cursor: replaying ? 'not-allowed' : 'pointer',
+            padding:'3px 10px', fontSize:'9px',
+            fontFamily:"'JetBrains Mono',monospace", letterSpacing:'.08em', transition:'all .2s',
+          }}
+          onMouseEnter={e => { if (!replaying) e.currentTarget.style.cssText += 'color:#00d4ff;border-color:#00d4ff55;' }}
+          onMouseLeave={e => { if (!replaying) e.currentTarget.style.cssText += 'color:#7aa0be;border-color:#1d2d40;' }}
+        >
+          {replaying ? '⏵ replaying…' : '↺ REPLAY BOTH PANELS'}
+        </button>
+      </div>
 
       <div className="split">
 
@@ -129,32 +149,26 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
             <div className="sp-time slow">72:00:00</div>
           </div>
 
-          {!everStarted ? (
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', flex:1, gap:'8px', opacity:.35 }}>
-              <div style={{ fontSize:'22px' }}>📧</div>
-              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>Run a scenario to see</div>
-              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>the traditional process</div>
-            </div>
-          ) : (
-            <>
-              {sc.trad.emails.map((email, i) => (
-                visibleTrad > i ? (
-                  <div className="eml" key={i} style={{ opacity:0, animation:'fadein 0.5s forwards' }}>
-                    <div className="er">
-                      <span className="efrom">{email.from}</span>
-                      <span className="etime">{email.time}</span>
-                    </div>
-                    <div className="esubj">{email.subj}</div>
-                    <div className="ebody">{email.body}</div>
-                  </div>
-                ) : (
-                  <div key={i} className="eml" style={{ opacity:.1, minHeight:'62px', background:'transparent', border:'1px dashed #1d2d40' }} />
-                )
-              ))}
-              {visibleTrad >= sc.trad.emails.length && (
-                <div className="ebar">{sc.trad.penalty}</div>
-              )}
-            </>
+          {sc.trad.emails.map((email, i) => (
+            visibleTrad > i ? (
+              <div className="eml" key={i} style={{ opacity:0, animation:'fadein 0.5s forwards' }}>
+                <div className="er">
+                  <span className="efrom">{email.from}</span>
+                  <span className="etime">{email.time}</span>
+                </div>
+                <div className="esubj">{email.subj}</div>
+                <div className="ebody">{email.body}</div>
+              </div>
+            ) : (
+              <div key={i} className="eml" style={{
+                opacity:.08, minHeight:'62px', background:'transparent',
+                border:'1px dashed #1d2d40',
+              }} />
+            )
+          ))}
+
+          {visibleTrad >= sc.trad.emails.length && (
+            <div className="ebar">{sc.trad.penalty}</div>
           )}
         </div>
 
@@ -166,16 +180,19 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
           </div>
 
           {!everStarted ? (
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', flex:1, gap:'8px', opacity:.35 }}>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', flex:1, gap:'8px', opacity:.35, paddingTop:'40px' }}>
               <div style={{ fontSize:'22px' }}>🤖</div>
-              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>Run a scenario to see</div>
-              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>the AI resolution</div>
+              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72', textAlign:'center' }}>
+                Start a scenario to see<br/>the AI resolution
+              </div>
             </div>
           ) : (
             <>
-              {(costSaved || (!replaying && hasLiveMessages)) && (
+              {(costSaved || resolutionTime) && (
                 <div className="ai-bar">
-                  ✅ {costSaved ? `RESOLVED IN ${aiTime} — saved ${costSaved}` : sc.ai.summary}
+                  ✅ {costSaved
+                    ? `RESOLVED IN ${aiTime} — saved ${formatCost(costSaved)}`
+                    : sc.ai.summary}
                 </div>
               )}
 
