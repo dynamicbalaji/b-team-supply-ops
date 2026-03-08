@@ -508,3 +508,33 @@ async def get_audit_trail(run_id: str):
         "mode":     mode,
         "items":    items,
     }
+
+
+# ── Episodic Memory endpoint ───────────────────────────────────────────────
+
+@router.get("/memory", tags=["Memory"])
+async def list_episodic_memory(
+    sort_by: str = "date_label",
+    order: str = "desc",
+):
+    """
+    GET /api/memory
+
+    Returns all rows from the episodic_memory table, newest first by default.
+
+    Query params
+    ────────────
+    sort_by : memory_key | scenario_type | date_label | cost_usd |
+              saved_usd  | confidence          (default: date_label)
+    order   : asc | desc                       (default: desc)
+
+    Falls back to in-memory seed data when TursoDB is not configured.
+    """
+    import turso_client
+    memories = await turso_client.list_all_memories(sort_by=sort_by, order=order)
+    return {
+        "total":    len(memories),
+        "sort_by":  sort_by,
+        "order":    order,
+        "memories": memories,
+    }

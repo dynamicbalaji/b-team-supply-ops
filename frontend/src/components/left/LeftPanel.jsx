@@ -28,12 +28,14 @@ import MapTab      from './MapTab'
 import SplitTab    from './SplitTab'
 import DecisionTab from './DecisionTab'
 import AuditTab    from './AuditTab'
+import MemoryTab   from './MemoryTab'
 
 const TABS = [
   { id: 'map',      label: '🗺 Live Map' },
   { id: 'split',    label: '⚡ Traditional vs AI' },
   { id: 'decision', label: '📊 Decision Matrix' },
   { id: 'audit',    label: '📋 Audit Trail' },
+  { id: 'memory',   label: '🧠 Episodic Memory' },
 ]
 
 export default function LeftPanel({
@@ -100,6 +102,11 @@ export default function LeftPanel({
           scenario={scenario}
           isRunning={isRunning}
         />
+      </div>
+
+      {/* MemoryTab — reads all rows from episodic_memory table */}
+      <div className={`tpane${activeTab === 'memory' ? ' on' : ''}`}>
+        <MemoryTab />
       </div>
     </div>
   )
