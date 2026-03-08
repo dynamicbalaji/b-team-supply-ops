@@ -45,7 +45,7 @@ settings = get_settings()
 
 
 # ── Logging setup ───────────────────────────────────────────────────────────────────
-# Call once here so every logger in the entire app (resolveiq.*, uvicorn, etc.)
+# Call once here so every logger in the entire app (chainguardai.*, uvicorn, etc.)
 # emits to stdout with timestamps.  Safe to call multiple times (idempotent).
 
 def _setup_logging() -> None:
@@ -67,7 +67,7 @@ def _setup_logging() -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 _setup_logging()
-log = logging.getLogger("resolveiq.main")
+log = logging.getLogger("chainguardai.main")
 
 
 # ── AsyncIO exception handler ────────────────────────────────────────────
@@ -92,7 +92,7 @@ asyncio.get_event_loop().set_exception_handler(_handle_exception)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("🚀 ResolveIQ backend starting...")
+    log.info("🚀 ChainGuardAI backend starting...")
     from agents.base import active_model_chain
     import db.turso_client as turso_client
     chain    = active_model_chain()
@@ -130,13 +130,13 @@ async def lifespan(app: FastAPI):
              settings.gemini_rate_limit_retries,
              settings.gemini_rate_limit_backoff)
     yield
-    log.info("👋 ResolveIQ backend shutting down")
+    log.info("👋 ChainGuardAI backend shutting down")
 
 
 # ── App ──────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="ResolveIQ API",
+    title="ChainGuardAI API",
     description="AI-powered supply chain crisis resolution",
     version="1.0.0",
     lifespan=lifespan,
@@ -354,8 +354,8 @@ _BASE_URL = "http://localhost:8000"   # overridden in production via settings
 _A2A_VERSION = "0.3.0"               # current A2A spec release
 
 _PROVIDER = {
-    "organization": "ResolveIQ",
-    "url": "https://github.com/resolveiq",
+    "organization": "ChainGuardAI",
+    "url": "https://github.com/chainguardai",
 }
 
 def _interfaces(agent_id: str) -> list:
@@ -373,7 +373,7 @@ AGENT_CARDS: dict[str, dict] = {
     # ── Orchestrator ──────────────────────────────────────────────────────
     "orchestrator": {
         # --- Identity ---
-        "name": "ResolveIQ Orchestrator",
+        "name": "ChainGuardAI Orchestrator",
         "description": (
             "Master coordinator for P0 supply-chain crisis resolution. "
             "Broadcasts the crisis brief to all specialist agents, tracks "
@@ -464,7 +464,7 @@ AGENT_CARDS: dict[str, dict] = {
 
     # ── Logistics ─────────────────────────────────────────────────────────
     "logistics": {
-        "name": "ResolveIQ Logistics Agent",
+        "name": "ChainGuardAI Logistics Agent",
         "description": (
             "Evaluates freight routes under crisis conditions. Fetches live "
             "carrier rates (air / sea / hybrid) via check_freight_rates(), "
@@ -544,7 +544,7 @@ AGENT_CARDS: dict[str, dict] = {
 
     # ── Finance ───────────────────────────────────────────────────────────
     "finance": {
-        "name": "ResolveIQ Finance Agent",
+        "name": "ChainGuardAI Finance Agent",
         "description": (
             "Quantitative challenger and final cost authoriser. Runs 100-iteration "
             "Monte Carlo simulations (Box-Muller, σ=15%) over the proposed route "
@@ -625,7 +625,7 @@ AGENT_CARDS: dict[str, dict] = {
 
     # ── Procurement ───────────────────────────────────────────────────────
     "procurement": {
-        "name": "ResolveIQ Procurement Agent",
+        "name": "ChainGuardAI Procurement Agent",
         "description": (
             "Spot-buy specialist. Queries the supplier catalog (TursoDB or "
             "in-memory fallback) for alternative sources near the crisis location. "
@@ -687,7 +687,7 @@ AGENT_CARDS: dict[str, dict] = {
 
     # ── Sales ─────────────────────────────────────────────────────────────
     "sales": {
-        "name": "ResolveIQ Sales Agent",
+        "name": "ChainGuardAI Sales Agent",
         "description": (
             "Customer relationship guardian. Retrieves live contract terms "
             "(SLA deadline, penalty clauses, extension eligibility, Q3 "
@@ -751,7 +751,7 @@ AGENT_CARDS: dict[str, dict] = {
 
     # ── Risk ──────────────────────────────────────────────────────────────
     "risk": {
-        "name": "ResolveIQ Risk Agent — Devil's Advocate",
+        "name": "ChainGuardAI Risk Agent — Devil's Advocate",
         "description": (
             "Activates ONLY after all four specialist agents have reached consensus. "
             "Reads the full agreed plan and the scenario-specific risk intelligence "
@@ -841,7 +841,7 @@ async def agent_card_legacy(agent_name: str):
 @app.get("/agents", tags=["A2A"])
 async def list_agents():
     """
-    Registry of all ResolveIQ A2A agents.
+    Registry of all ChainGuardAI A2A agents.
 
     Returns each agent's agentId, canonical card URL (v0.3.0 URI),
     task endpoint, version, protocolVersion, skill index (id + name + tags),

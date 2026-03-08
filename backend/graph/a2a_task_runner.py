@@ -64,7 +64,7 @@ from typing import Any
 from core.models import ScenarioType, AgentId
 from core.scenarios import SCENARIO_DEFINITIONS
 
-log = logging.getLogger("resolveiq.a2a_task_runner")
+log = logging.getLogger("chainguardai.a2a_task_runner")
 
 
 # ── Supported task names per agent (for validation + docs) ───────────────

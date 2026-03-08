@@ -1,7 +1,7 @@
 """
 turso_client.py
 ───────────────
-TursoDB (libSQL) persistence layer for ResolveIQ.
+TursoDB (libSQL) persistence layer for ChainGuardAI.
 
 Replaces all in-memory dicts that were Phase 2 stubs:
   • _runs   (orchestrator.py)  → table: runs
@@ -17,8 +17,8 @@ Install:
     pip install libsql-client
 
 Turso setup (free tier):
-    turso db create resolveiq
-    turso db tokens create resolveiq
+    turso db create chainguardai
+    turso db tokens create chainguardai
     # Copy the URL and token into .env as TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
 
 4-table schema (created automatically on first startup):
@@ -37,7 +37,7 @@ from typing import Any
 
 from core.config import get_settings
 
-log = logging.getLogger("resolveiq.turso")
+log = logging.getLogger("chainguardai.turso")
 
 # ── Optional SDK import ────────────────────────────────────────────────────
 

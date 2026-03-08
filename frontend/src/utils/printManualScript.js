@@ -57,7 +57,7 @@ export function showManualScript() {
   w.document.write(`<!DOCTYPE html>
 <html>
 <head>
-  <title>ResolveIQ — Manual Mode Script</title>
+  <title>ChainGuardAI — Manual Mode Script</title>
   <style>
     body {
       margin: 0;

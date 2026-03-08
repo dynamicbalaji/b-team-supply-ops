@@ -40,7 +40,7 @@ from core.models import (
 )
 from core.config import get_settings
 
-_logger = logging.getLogger("resolveiq.agents")
+_logger = logging.getLogger("chainguardai.agents")
 
 
 # ─────────────────────────────────────────────────────────────────────────

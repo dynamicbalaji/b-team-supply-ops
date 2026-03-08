@@ -52,7 +52,7 @@ from core.models import ScenarioType
 from core.scenarios import SCENARIO_DEFINITIONS
 from audit.audit_pdf import generate_audit_pdf
 
-log = logging.getLogger("resolveiq.routes.decision_audit")
+log = logging.getLogger("chainguardai.routes.decision_audit")
 
 router = APIRouter(tags=["Decision & Audit"])
 
