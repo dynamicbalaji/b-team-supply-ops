@@ -234,7 +234,7 @@ export default function DecisionTab({
         display:'flex', flexDirection:'column', alignItems:'center',
         justifyContent:'center', height:'100%', gap:'12px', opacity:.35,
       }}>
-        <div style={{ fontSize:'28px' }}>📊</div>
+        <img src="/shield-icon.png" alt="" className="empty-shield-icon" />
         <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#3d5a72' }}>
           Run a scenario to populate
         </div>
