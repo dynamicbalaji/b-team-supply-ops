@@ -96,13 +96,10 @@ async def _phase0_broadcast(state: RunGraphState) -> RunGraphState:
 
     await _phase(run_id, 0, "done")
     await _phase(run_id, 1, "active")
+    from scenarios import _orchestrator_broadcast
     await _orc_msg(
         run_id,
-        (
-            f"Crisis P0: SC-2024-8891 blocked at Long Beach. "
-            f"Budget cap ${sc.budget_cap_usd // 1000}K. "
-            f"Deadline {sc.deadline_hours}h. Begin parallel evaluation."
-        ),
+        _orchestrator_broadcast(sc),
         elapsed(started_at),
     )
     await _map(run_id, "AGENTS ACTIVE", "#ffb340", "Evaluating routes")
@@ -336,6 +333,7 @@ _GRAPH_APP = _build_orchestrator_graph()
 class _CascadeState(TypedDict, total=False):
     run_id:     str
     started_at: float
+    scenario:   ScenarioType
 
 
 async def _exec_phase_transition(state: _CascadeState) -> _CascadeState:
@@ -355,12 +353,15 @@ async def _exec_logistics_confirm(state: _CascadeState) -> _CascadeState:
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
+    from scenarios import _logistics_exec_message, SCENARIO_DEFINITIONS
+    scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
+    sc = SCENARIO_DEFINITIONS[scenario]
     await redis_client.publish(run_id, ExecutionEvent(
         agent=AgentId.LOGISTICS,
         from_label="✈ LOGISTICS",
         css_class="al",
         timestamp=_elapsed(started_at),
-        text="Freight booked: LAX → Austin TX · FX-2024-8891 · ETA 36h",
+        text=_logistics_exec_message(sc),
     ).model_dump())
     await publish_state(run_id, AgentId.LOGISTICS, AgentStatus.COMPLETE,
                         tool="✅ done", confidence=0.88, pulsing=False)
@@ -375,12 +376,15 @@ async def _exec_sales_notify(state: _CascadeState) -> _CascadeState:
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
+    from scenarios import _sales_exec_message, SCENARIO_DEFINITIONS
+    scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
+    sc = SCENARIO_DEFINITIONS[scenario]
     await redis_client.publish(run_id, ExecutionEvent(
         agent=AgentId.SALES,
         from_label="📧 SALES",
         css_class="as_",
         timestamp=_elapsed(started_at),
-        text="Apple notified — 36h extension confirmed · Q3 priority allocation logged",
+        text=_sales_exec_message(sc),
     ).model_dump())
     await publish_state(run_id, AgentId.SALES, AgentStatus.COMPLETE,
                         tool="✅ done", confidence=0.97, pulsing=False)
@@ -395,12 +399,16 @@ async def _exec_finance_release(state: _CascadeState) -> _CascadeState:
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
+    from scenarios import _finance_exec_message, SCENARIO_DEFINITIONS
+    scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
+    sc = SCENARIO_DEFINITIONS[scenario]
+    cost = state.get("run_context", {}).get("finance", {}).get("hybrid_cost", 280_000) if state.get("run_context") else 280_000
     await redis_client.publish(run_id, ExecutionEvent(
         agent=AgentId.FINANCE,
         from_label="💰 FINANCE",
         css_class="af",
         timestamp=_elapsed(started_at),
-        text="Budget released: $280K · Contingency $20K · PO #F-7741 issued",
+        text=_finance_exec_message(sc, cost),
     ).model_dump())
     await publish_state(run_id, AgentId.FINANCE, AgentStatus.COMPLETE,
                         tool="✅ done", confidence=0.94, pulsing=False)
@@ -415,12 +423,15 @@ async def _exec_procurement_cancel(state: _CascadeState) -> _CascadeState:
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
+    from scenarios import _procurement_last_message, SCENARIO_DEFINITIONS
+    scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
+    sc = SCENARIO_DEFINITIONS[scenario]
     await redis_client.publish(run_id, ExecutionEvent(
         agent=AgentId.PROCUREMENT,
         from_label="🚫 PROCUREMENT",
         css_class="ap",
         timestamp=_elapsed(started_at),
-        text="Dallas spot order cancelled · Tucson backup scheduled for Hour 20",
+        text=_procurement_last_message(sc),
     ).model_dump())
     await publish_state(run_id, AgentId.PROCUREMENT, AgentStatus.COMPLETE,
                         tool="✅ done", confidence=0.71, pulsing=False)
@@ -436,6 +447,7 @@ async def _exec_complete(state: _CascadeState) -> _CascadeState:
     started_at = state.get("started_at") or time.time()
 
     await _phase(run_id, 4, "done")
+    await _phase(run_id, 5, "active")
     await _map(run_id, "DELIVERED ✅", "#00e676")
     await redis_client.publish(run_id, CompleteEvent(
         resolution_time=_elapsed(started_at),
@@ -443,6 +455,7 @@ async def _exec_complete(state: _CascadeState) -> _CascadeState:
         saved_usd=220_000,
         message_count=9,
     ).model_dump())
+    await _phase(run_id, 5, "done")
     return state
 
 
@@ -507,9 +520,19 @@ async def run_execution_cascade_graph(run_id: str, started_at: float) -> None:
     Redis publish inside each node.  No asyncio.sleep timing loops here;
     the node sequence itself is the execution schedule.
     """
+    # Load scenario from Redis state so cascade messages are scenario-aware
+    try:
+        run_state = await redis_client.get_run_state(run_id)
+        scenario_val = (run_state or {}).get("scenario", ScenarioType.PORT_STRIKE)
+        if isinstance(scenario_val, str):
+            scenario_val = ScenarioType(scenario_val)
+    except Exception:
+        scenario_val = ScenarioType.PORT_STRIKE
+
     initial: _CascadeState = {
         "run_id":     run_id,
         "started_at": started_at,
+        "scenario":   scenario_val,
     }
     await _CASCADE_GRAPH.ainvoke(initial)
 

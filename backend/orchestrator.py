@@ -272,7 +272,7 @@ async def run_scenario(run_id: str, scenario: ScenarioType) -> None:
 # Execution Cascade (Post-Approval, Phase 4-5)
 # ─────────────────────────────────────────────────────────────────────────
 
-async def run_execution_cascade(run_id: str) -> None:
+async def run_execution_cascade(run_id: str, scenario: ScenarioType | None = None) -> None:
     """
     Execute the post-approval cascade (Phase 4-5).
 
@@ -297,7 +297,8 @@ async def run_execution_cascade(run_id: str) -> None:
         await run_execution_cascade_graph(run_id, started_at)
     else:
         print(f"📜 [{run_id[:8]}] HARDCODED execution cascade")
-        await run_hardcoded_cascade(run_id)
+        run_scenario = _runs.get(run_id, {}).get("scenario", ScenarioType.PORT_STRIKE)
+        await run_hardcoded_cascade(run_id, run_scenario)
 
     set_run_status(run_id, RunStatus.COMPLETE)
     await redis_client.set_run_state(run_id, _runs[run_id])
@@ -324,7 +325,7 @@ async def run_hardcoded_scenario(run_id: str, scenario: ScenarioType) -> None:
     await redis_client.set_run_state(run_id, _runs[run_id])
 
 
-async def run_hardcoded_cascade(run_id: str) -> None:
+async def run_hardcoded_cascade(run_id: str, scenario: ScenarioType = ScenarioType.PORT_STRIKE) -> None:
     """
     Replay Phase 1 execution event list at recorded timestamps.
 
@@ -332,5 +333,6 @@ async def run_hardcoded_cascade(run_id: str) -> None:
 
     Args:
         run_id: Run identifier.
+        scenario: ScenarioType to generate scenario-specific messages.
     """
-    await _emit_timed_steps(run_id, get_execution_steps())
+    await _emit_timed_steps(run_id, get_execution_steps(scenario))
