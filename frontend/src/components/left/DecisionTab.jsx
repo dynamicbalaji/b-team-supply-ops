@@ -89,13 +89,13 @@ export default function DecisionTab({ mcDistribution, mcStats, isActive, approva
     return (
       <div style={{
         display:'flex', flexDirection:'column', alignItems:'center',
-        justifyContent:'center', height:'100%', gap:'12px', opacity:.35,
+        justifyContent:'center', height:'100%', gap:'12px',
       }}>
-        <div style={{ fontSize:'28px' }}>📊</div>
-        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#3d5a72' }}>
+        <div style={{ fontSize:'28px', opacity:.35 }}>📊</div>
+        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px' }} className="msg-empty-txt">
           Run a scenario to populate
         </div>
-        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#3d5a72' }}>
+        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px' }} className="msg-empty-txt">
           the Decision Matrix
         </div>
       </div>
@@ -234,9 +234,9 @@ export default function DecisionTab({ mcDistribution, mcStats, isActive, approva
             <div style={{
               position: 'absolute', inset: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: "'JetBrains Mono',monospace", fontSize: '9px', color: '#3d5a72',
+              fontFamily: "'JetBrains Mono',monospace", fontSize: '9px',
               pointerEvents: 'none',
-            }}>
+            }} className="msg-empty-txt">
               Run a scenario to generate simulation data
             </div>
           )}

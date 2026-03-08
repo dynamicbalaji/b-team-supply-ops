@@ -88,13 +88,13 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
           /* Pre-run placeholder */
           <div style={{
             display:'flex', flexDirection:'column', alignItems:'center',
-            justifyContent:'center', flex:1, gap:'8px', opacity:.35,
+            justifyContent:'center', flex:1, gap:'8px',
           }}>
-            <div style={{ fontSize:'22px' }}>📧</div>
-            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>
+            <div style={{ fontSize:'22px', opacity:.35 }}>📧</div>
+            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px' }} className="msg-empty-txt">
               Run a scenario to see
             </div>
-            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>
+            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px' }} className="msg-empty-txt">
               the traditional process
             </div>
           </div>
@@ -134,13 +134,13 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
         {!everStarted ? (
           <div style={{
             display:'flex', flexDirection:'column', alignItems:'center',
-            justifyContent:'center', flex:1, gap:'8px', opacity:.35,
+            justifyContent:'center', flex:1, gap:'8px',
           }}>
-            <div style={{ fontSize:'22px' }}>🤖</div>
-            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>
+            <div style={{ fontSize:'22px', opacity:.35 }}>🤖</div>
+            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px' }} className="msg-empty-txt">
               Run a scenario to see
             </div>
-            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>
+            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px' }} className="msg-empty-txt">
               the AI resolution
             </div>
           </div>
