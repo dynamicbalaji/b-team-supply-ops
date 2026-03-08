@@ -296,8 +296,40 @@ function createNodeActivityIndicator(node, blocked, activity = 'normal') {
   </div>`
 }
 
+// ─── Tile layer definitions (Google Maps-style) ───────────────────────────────
+export const TILE_LAYERS = {
+  dark: {
+    id: 'dark',
+    label: 'Dark',
+    icon: '🌑',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    opts: { subdomains: 'abcd', maxZoom: 19, detectRetina: true },
+  },
+  satellite: {
+    id: 'satellite',
+    label: 'Satellite',
+    icon: '🛰',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    opts: { maxZoom: 19 },
+  },
+  street: {
+    id: 'street',
+    label: 'Map',
+    icon: '🗺',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    opts: { subdomains: 'abcd', maxZoom: 19, detectRetina: true },
+  },
+  terrain: {
+    id: 'terrain',
+    label: 'Terrain',
+    icon: '⛰',
+    url: 'https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}{r}.png',
+    opts: { subdomains: 'abcd', maxZoom: 18 },
+  },
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
-export function useLeafletMap(containerRef, { scenario, truckPhase, onTruckPhaseChange, isActive }) {
+export function useLeafletMap(containerRef, { scenario, truckPhase, onTruckPhaseChange, isActive, tileLayerId }) {
   // All mutable state lives in refs — never causes re-renders
   const mapRef          = useRef(null)
   const layerGroupRef   = useRef(null)
@@ -310,12 +342,27 @@ export function useLeafletMap(containerRef, { scenario, truckPhase, onTruckPhase
   const readyRef        = useRef(false)
   const destroyedRef    = useRef(false)
   const flowParticlesRef = useRef([])     // NEW: Track animated particles
+  const tileLayerRef    = useRef(null)    // Current tile layer instance
 
   // ── Sync phase ref ───────────────────────────────────────────────────────
   useEffect(() => {
     truckPhaseRef.current = truckPhase
     if (truckPhase === 'flying' || truckPhase === 'driving') truckTRef.current = 0
   }, [truckPhase])
+
+  // ── Swap tile layer when selection changes ───────────────────────────────
+  useEffect(() => {
+    if (!readyRef.current || !mapRef.current || destroyedRef.current) return
+    const Lf = window.L
+    if (!Lf) return
+    const def = TILE_LAYERS[tileLayerId] || TILE_LAYERS.satellite
+    if (tileLayerRef.current) {
+      mapRef.current.removeLayer(tileLayerRef.current)
+    }
+    tileLayerRef.current = Lf.tileLayer(def.url, { ...def.opts, noWrap: true }).addTo(mapRef.current)
+    // Move content layers back on top
+    if (layerGroupRef.current) layerGroupRef.current.bringToFront?.()
+  }, [tileLayerId])
 
   // ── Redraw on scenario change ────────────────────────────────────────────
   useEffect(() => {
@@ -359,10 +406,16 @@ export function useLeafletMap(containerRef, { scenario, truckPhase, onTruckPhase
         scrollWheelZoom:    true,
         attributionControl: false,
         inertia:            true,
+        worldCopyJump:      false,
+        maxBoundsViscosity: 1.0,
+        maxBounds:          [[-90, -220], [90, 220]],
+        minZoom:            2,
       })
 
-      Lf.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        subdomains: 'abcd', maxZoom: 19, detectRetina: true,
+      const initLayerDef = TILE_LAYERS[tileLayerId] || TILE_LAYERS.satellite
+      tileLayerRef.current = Lf.tileLayer(initLayerDef.url, {
+        ...initLayerDef.opts,
+        noWrap: true,
       }).addTo(map)
 
       mapRef.current = map
