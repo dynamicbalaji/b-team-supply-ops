@@ -73,6 +73,72 @@ SCENARIO_DEFINITIONS: dict[ScenarioType, ScenarioDefinition] = {
 # frontend animation timing feels the same whether running hardcoded
 # (Phase 1) or live Gemini (Phase 2+).
 
+
+# ── Scenario-specific message helpers ────────────────────────────────────
+
+_SCENARIO_IDS = {
+    ScenarioType.PORT_STRIKE:     "SC-2024-8891",
+    ScenarioType.CUSTOMS_DELAY:   "SC-2024-4423",
+    ScenarioType.SUPPLIER_BREACH: "SC-2024-7701",
+}
+
+_SCENARIO_LOCATIONS = {
+    ScenarioType.PORT_STRIKE:     "Port of Long Beach",
+    ScenarioType.CUSTOMS_DELAY:   "Shenzhen Customs",
+    ScenarioType.SUPPLIER_BREACH: "Taiwan fab",
+}
+
+
+def _orchestrator_broadcast(sc) -> str:
+    sid = _SCENARIO_IDS.get(sc.id, "SC-2024-0000")
+    loc = _SCENARIO_LOCATIONS.get(sc.id, "unknown location")
+    return (
+        f"Crisis P0: {sid} {sc.crisis_title} {sc.crisis_detail.split('·')[0].strip()}. "
+        f"Budget cap ${sc.budget_cap_usd // 1000}K. "
+        f"Deadline {sc.deadline_hours}h. Begin parallel evaluation."
+    )
+
+
+def _procurement_last_message(sc) -> str:
+    """Scenario-specific final procurement execution message."""
+    if sc.id == ScenarioType.PORT_STRIKE:
+        return "Dallas spot order cancelled · Hybrid 60/40 confirmed · Long Beach diversion logged"
+    elif sc.id == ScenarioType.CUSTOMS_DELAY:
+        return "Shenzhen alternate broker engaged · Backup LAX bonded warehouse reserved"
+    else:  # SUPPLIER_BREACH
+        return "Taiwan order formally cancelled · TSMC secondary fab slot confirmed as backup"
+
+
+def _logistics_exec_message(sc) -> str:
+    """Scenario-specific logistics execution confirmation."""
+    if sc.id == ScenarioType.PORT_STRIKE:
+        return "Hybrid route booked: 60% air via LAX + 40% sea via Oakland · ETA 36h · H20 backup: Tucson"
+    elif sc.id == ScenarioType.CUSTOMS_DELAY:
+        return "Air freight rerouted: Shenzhen → LAX via expedited customs broker · ETA 28h"
+    else:  # SUPPLIER_BREACH
+        return "TSMC secondary allocation confirmed: Hsinchu → Seattle · ETA 60h"
+
+
+def _sales_exec_message(sc) -> str:
+    """Scenario-specific sales notification message."""
+    if sc.id == ScenarioType.PORT_STRIKE:
+        return f"{sc.customer} notified — 36h extension confirmed · Q3 priority allocation logged"
+    elif sc.id == ScenarioType.CUSTOMS_DELAY:
+        return f"{sc.customer} notified — 28h delay acknowledged · Expedited clearance in progress"
+    else:  # SUPPLIER_BREACH
+        return f"{sc.customer} notified — 60h revised ETA confirmed · Secondary fab SLA issued"
+
+
+def _finance_exec_message(sc, cost_usd: int = 280_000) -> str:
+    """Scenario-specific finance budget release message."""
+    if sc.id == ScenarioType.PORT_STRIKE:
+        return f"Budget released: ${cost_usd // 1000}K · Contingency $20K · PO #F-7741 issued"
+    elif sc.id == ScenarioType.CUSTOMS_DELAY:
+        return f"Budget released: ${cost_usd // 1000}K · Broker fee $15K · PO #F-7742 issued"
+    else:  # SUPPLIER_BREACH
+        return f"Budget released: ${cost_usd // 1000}K · Premium surcharge $40K · PO #F-7743 issued"
+
+
 def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
     """
     Returns the ordered list of SSE events for a scenario.
@@ -126,11 +192,7 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 agent=AgentId.ORCHESTRATOR,
                 from_label="ORCHESTRATOR", to_label="→ ALL",
                 timestamp="00:00", css_class="orc",
-                text=(
-                    f"Crisis P0: SC-2024-8891 blocked at Long Beach. "
-                    f"Budget cap ${sc.budget_cap_usd // 1000}K. "
-                    f"Deadline {sc.deadline_hours}h. Begin parallel evaluation."
-                ),
+                text=_orchestrator_broadcast(sc),
                 tools=[],
             ).model_dump(),
         },
@@ -376,9 +438,23 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
             "delay_ms": 12500,
             "event": RiskActivatedEvent(
                 message=(
-                    "LAX ground crew unconfirmed during active strike. "
-                    "Single point of failure in Hybrid plan. "
-                    "Recommend Hour-20 backup trigger to Tucson air route."
+                    {
+                        ScenarioType.PORT_STRIKE: (
+                            "LAX ground crew unconfirmed during active strike. "
+                            "Single point of failure in Hybrid plan. "
+                            "Recommend Hour-20 backup trigger to Tucson air route."
+                        ),
+                        ScenarioType.CUSTOMS_DELAY: (
+                            "LAX bonded warehouse capacity unconfirmed during peak clearance window. "
+                            "Risk of 12h holding delay on arrival. "
+                            "Recommend pre-booking alternate bonded facility at Ontario CA."
+                        ),
+                        ScenarioType.SUPPLIER_BREACH: (
+                            "Seattle port receiving capacity unconfirmed for oversized fab equipment. "
+                            "Single point of failure in TSMC Hsinchu → Seattle routing. "
+                            "Recommend Hour-40 backup trigger to Los Angeles air freight."
+                        ),
+                    }[scenario]
                 ),
             ).model_dump(),
         },
@@ -389,9 +465,23 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 from_label="RISK AGENT", to_label="→ ALL ⚠",
                 timestamp="03:45", css_class="ar",
                 text=(
-                    "⚠ Consensus challenge: LAX ground crew unconfirmed. "
-                    "Single point of failure. Recommend Hour-20 backup trigger "
-                    "to Tucson route."
+                    {
+                        ScenarioType.PORT_STRIKE: (
+                            "⚠ Consensus challenge: LAX ground crew unconfirmed. "
+                            "Single point of failure. Recommend Hour-20 backup trigger "
+                            "to Tucson route."
+                        ),
+                        ScenarioType.CUSTOMS_DELAY: (
+                            "⚠ Consensus challenge: LAX bonded warehouse capacity unconfirmed. "
+                            "Risk of 12h holding delay. Recommend backup bonded facility "
+                            "at Ontario CA."
+                        ),
+                        ScenarioType.SUPPLIER_BREACH: (
+                            "⚠ Consensus challenge: Seattle port receiving capacity unconfirmed. "
+                            "Single point of failure on Hsinchu → Seattle route. Recommend "
+                            "Hour-40 backup trigger to LA air freight."
+                        ),
+                    }[scenario]
                 ),
                 tools=[],
             ).model_dump(),
@@ -467,11 +557,13 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
 
 # ── Execution cascade (fires after APPROVE button) ───────────────────────
 
-def get_execution_steps() -> list[dict]:
+def get_execution_steps(scenario: ScenarioType = ScenarioType.PORT_STRIKE) -> list[dict]:
     """
     Events emitted after the human clicks APPROVE.
     Delays are relative to the moment approve is called.
+    Scenario-specific messages are derived from the passed scenario.
     """
+    sc = SCENARIO_DEFINITIONS[scenario]
     return [
         {
             "delay_ms": 0,
@@ -494,7 +586,7 @@ def get_execution_steps() -> list[dict]:
                 agent=AgentId.LOGISTICS,
                 from_label="✈ LOGISTICS", css_class="al",
                 timestamp="04:32",
-                text="Freight booked: LAX → Austin TX · FX-2024-8891 · ETA 36h",
+                text=_logistics_exec_message(sc),
             ).model_dump(),
         },
         {
@@ -503,7 +595,7 @@ def get_execution_steps() -> list[dict]:
                 agent=AgentId.SALES,
                 from_label="📧 SALES", css_class="as_",
                 timestamp="04:33",
-                text="Apple notified — 36h extension confirmed · Q3 priority allocation logged",
+                text=_sales_exec_message(sc),
             ).model_dump(),
         },
         {
@@ -512,7 +604,7 @@ def get_execution_steps() -> list[dict]:
                 agent=AgentId.FINANCE,
                 from_label="💰 FINANCE", css_class="af",
                 timestamp="04:34",
-                text="Budget released: $280K · Contingency $20K · PO #F-7741 issued",
+                text=_finance_exec_message(sc),
             ).model_dump(),
         },
         {
@@ -521,7 +613,7 @@ def get_execution_steps() -> list[dict]:
                 agent=AgentId.PROCUREMENT,
                 from_label="🚫 PROCUREMENT", css_class="ap",
                 timestamp="04:35",
-                text="Dallas spot order cancelled · Tucson backup scheduled for Hour 20",
+                text=_procurement_last_message(sc),
             ).model_dump(),
         },
         {
@@ -557,6 +649,10 @@ def get_execution_steps() -> list[dict]:
             "event": PhaseEvent(phase=4, status="done").model_dump(),
         },
         {
+            "delay_ms": 3420,
+            "event": PhaseEvent(phase=5, status="active").model_dump(),
+        },
+        {
             "delay_ms": 3450,
             "event": MapUpdateEvent(
                 status="DELIVERED ✅", status_color="#00e676",
@@ -567,8 +663,12 @@ def get_execution_steps() -> list[dict]:
             "event": CompleteEvent(
                 resolution_time="4m 32s",
                 cost_usd=280_000,
-                saved_usd=220_000,
+                saved_usd=max(sc.penalty_usd - 280_000, 0),
                 message_count=9,
             ).model_dump(),
+        },
+        {
+            "delay_ms": 3600,
+            "event": PhaseEvent(phase=5, status="done").model_dump(),
         },
     ]
