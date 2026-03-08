@@ -305,9 +305,11 @@ async def approve_run(run_id: str, body: ApproveRunRequest, background_tasks: Ba
         )
 
     if not body.approved:
-        # Rejection — just update status (Phase 1 doesn't handle rejection flow)
-        orchestrator.set_run_status(run_id, RunStatus.FAILED)
-        return {"run_id": run_id, "status": "rejected"}
+        # Rejection — fire re-negotiation cascade as background task
+        orchestrator.set_run_status(run_id, RunStatus.RUNNING)
+        background_tasks.add_task(orchestrator.run_rejection_cascade, run_id, body.notes or "")
+        return {"run_id": run_id, "status": "renegotiating",
+                "message": "Agents re-engaged for alternative proposal"}
 
     orchestrator.set_run_status(run_id, RunStatus.APPROVED)
     background_tasks.add_task(orchestrator.run_execution_cascade, run_id)

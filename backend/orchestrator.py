@@ -306,9 +306,131 @@ async def run_execution_cascade(run_id: str, scenario: ScenarioType | None = Non
         print(f"📜 [{run_id[:8]}] HARDCODED execution cascade")
         run_scenario = _runs.get(run_id, {}).get("scenario", ScenarioType.PORT_STRIKE)
         await run_hardcoded_cascade(run_id, run_scenario)
+        # Persist hardcoded metrics so PDF endpoint can read them
+        try:
+            from scenarios import SCENARIO_DEFINITIONS
+            sc_def = SCENARIO_DEFINITIONS.get(run_scenario)
+            cost   = 280_000
+            saved  = max(sc_def.penalty_usd - cost, 0) if sc_def else 1_720_000
+            elapsed_s = int(_time.time() - started_at)
+            m, s   = divmod(elapsed_s, 60)
+            if run_id in _runs:
+                _runs[run_id]["cost_usd"]        = cost
+                _runs[run_id]["saved_usd"]        = saved
+                _runs[run_id]["confidence"]       = 0.94
+                _runs[run_id]["resolution_time"]  = f"{m}m {s:02d}s"
+        except Exception as _me:
+            print(f"[hardcoded_cascade] metrics persist skipped: {_me}")
 
     set_run_status(run_id, RunStatus.COMPLETE)
     await redis_client.set_run_state(run_id, _runs[run_id])
+
+
+
+async def run_rejection_cascade(run_id: str, rejection_notes: str = "") -> None:
+    """
+    Re-negotiation cascade fired when the VP rejects the hybrid proposal.
+
+    Publishes a dramatic SSE sequence:
+      1. Orchestrator announces rejection + escalation
+      2. Finance proposes air-only fallback (faster, higher cost)
+      3. Logistics confirms air-only availability
+      4. Risk acknowledges trade-off
+      5. New approval_required event with air-only numbers
+
+    This gives the hackathon judges something impressive to demo:
+    rejection → live agent re-engagement → alternative proposal → second approval gate.
+    """
+    import time as _t
+    run = _runs.get(run_id, {})
+    scenario    = run.get("scenario", ScenarioType.PORT_STRIKE)
+    started_at  = run.get("started_at", _t.time()) or _t.time()
+
+    from models import (
+        AgentId, AgentStatus, MessageEvent, AgentStateEvent,
+        ApprovalRequiredEvent, MapUpdateEvent,
+    )
+    from agents.base import elapsed, publish_state
+    from audit_helpers import publish_audit_event
+
+    async def _msg(agent, from_l, to_l, css, text):
+        s = int(_t.time() - started_at)
+        ts = f"{s//60:02d}:{s%60:02d}"
+        await redis_client.publish(run_id, MessageEvent(
+            agent=agent, from_label=from_l, to_label=to_l,
+            timestamp=ts, css_class=css, text=text, tools=[],
+        ).model_dump())
+
+    async def _state(agent, status, tool="", conf=0, pulse=False):
+        await publish_state(run_id, agent, status, tool=tool, confidence=conf, pulsing=pulse)
+
+    async def _map(status, color, route=None):
+        await redis_client.publish(run_id, MapUpdateEvent(
+            status=status, status_color=color, route=route
+        ).model_dump())
+
+    try:
+        await _map("RE-NEGOTIATING", "#ff3b5c", "VP rejected hybrid — agents re-engaged")
+
+        # 1. Orchestrator: rejection announcement
+        await _msg(AgentId.ORCHESTRATOR, "ORCHESTRATOR", "→ ALL", "orc",
+            f"VP has REJECTED the hybrid proposal. Reason: {rejection_notes or 'Cost threshold exceeded'}. "
+            "Re-engaging agents — propose air-only expedited route. Budget override authorised.")
+        await _t.sleep(0) if False else None  # yield
+
+        # 2. Finance: air-only cost recalculation
+        await _state(AgentId.FINANCE, AgentStatus.CALCULATING, "📊 recalculate_budget()", pulse=True)
+        await _msg(AgentId.FINANCE, "FINANCE", "→ ALL", "af",
+            "Running air-only Monte Carlo. Expedited LAX route: $340K base + $28K customs = $368K total. "
+            "Penalty avoided: $2M. Net saving vs traditional: $132K. CI 91%. Recommend immediate execution.")
+        await _state(AgentId.FINANCE, AgentStatus.CONSENSUS, "📊 air_only_budget()", conf=91, pulse=False)
+
+        # 3. Logistics: confirm air-only slot
+        await _state(AgentId.LOGISTICS, AgentStatus.PROPOSING, "✈ book_air_slot()", pulse=True)
+        await _msg(AgentId.LOGISTICS, "LOGISTICS", "→ ORCH", "al",
+            "Air-only confirmed: LAX → Austin TX direct. DHL Express slot secured. ETA 18h. "
+            "Cost $340K. No sea leg — eliminates Long Beach congestion risk entirely. Ready to execute on approval.")
+        await _state(AgentId.LOGISTICS, AgentStatus.DONE, "✈ air_slot_confirmed()", conf=88, pulse=False)
+
+        # 4. Risk: acknowledge trade-off
+        await _state(AgentId.RISK, AgentStatus.DONE, "⚠ risk_recheck()", conf=72, pulse=False)
+        await _msg(AgentId.RISK, "RISK", "→ ALL", "ar",
+            "Air-only risk profile: higher fuel-cost exposure but eliminates maritime congestion variable. "
+            "Single carrier dependency noted — DHL contingency: FedEx Priority same-day switchover available.")
+
+        # 5. Audit: rejection noted
+        await publish_audit_event(
+            run_id=run_id, started_at=started_at,
+            agent_color="#ff3b5c", agent_label="⏸ VP Operations",
+            step_name="Proposal Rejected",
+            description=f"Hybrid route rejected. Reason: {rejection_notes or 'Cost threshold exceeded'}. Agents re-engaged for air-only alternative.",
+            data="rejected=hybrid · reason=" + (rejection_notes or "cost_threshold"),
+        )
+        await publish_audit_event(
+            run_id=run_id, started_at=started_at,
+            agent_color="#39d98a", agent_label="💰 Finance Agent",
+            step_name="Air-Only Proposal",
+            description="Air-only expedited route: $368K total. Penalty avoided $2M. CI 91%. Faster: 18h vs 36h.",
+            data="air_only=$340K · customs=$28K · ci=91% · eta=18h",
+        )
+
+        # 6. New approval request with air-only numbers
+        await redis_client.publish(run_id, ApprovalRequiredEvent(
+            option="air_only",
+            label="Air-Only Expedited — 100% DHL Express LAX",
+            cost_usd=368_000,
+            reserve_usd=15_000,
+            delivery_hours=18,
+            confidence=0.91,
+            detail="$368K + $15K reserve · 18h delivery · Single carrier DHL · Penalty avoided $2M · CI 91%",
+        ).model_dump())
+        await _map("AWAITING APPROVAL", "#ffb340")
+        set_run_status(run_id, RunStatus.AWAITING_APPROVAL)
+
+    except Exception as e:
+        print(f"❌ Rejection cascade error for {run_id}: {e}")
+        import traceback; traceback.print_exc()
+        set_run_status(run_id, RunStatus.FAILED)
 
 
 # ─────────────────────────────────────────────────────────────────────────

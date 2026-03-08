@@ -272,7 +272,22 @@ export default function App() {
     }
   }
 
-  function rejectDecision()  { setState(prev => ({ ...prev, approvalVisible:false })) }
+  async function rejectDecision(reason = '') {
+    const runId = state.runId
+    // Close approval panel immediately — agents are re-engaging
+    setState(prev => ({ ...prev, approvalVisible:false, isApproved:false }))
+    if (runId) {
+      try {
+        await fetch(`${import.meta.env.VITE_API_URL}/api/runs/${runId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved: false, notes: reason, run_id: runId }),
+        })
+      } catch (err) {
+        console.warn('[reject] fetch failed:', err.message)
+      }
+    }
+  }
   function resetScenario()   {
     timerRefs.current.forEach(clearTimeout); timerRefs.current = []
     disconnect(); setAgents(INITIAL_AGENTS); setRiskAgent(INITIAL_RISK)

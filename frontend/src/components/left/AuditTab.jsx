@@ -23,13 +23,28 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 // ── PDF export ────────────────────────────────────────────────────────────
 
 async function handleExportPDF(runId) {
-  if (!runId) { alert('No active run to export.'); return }
+  if (!runId) {
+    alert('Start a scenario first — the audit trail will be exported once a run is active.')
+    return
+  }
   const url = `${API_BASE}/api/runs/${runId}/audit-trail/pdf`
   try {
-    const probe = await fetch(url, { method: 'HEAD' }).catch(() => null)
-    if (probe?.ok) window.open(url, '_blank')
-    else window.print()
-  } catch { window.print() }
+    // Trigger a real download via a temporary anchor element
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const blob = await res.blob()
+    const href = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = href
+    a.download = `chainguardai-audit-${runId.slice(0,8)}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(href)
+  } catch (err) {
+    console.warn('[exportPDF] backend failed, printing instead:', err.message)
+    window.print()
+  }
 }
 
 // ── Shimmer skeleton card ─────────────────────────────────────────────────
