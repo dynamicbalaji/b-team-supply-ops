@@ -1,12 +1,12 @@
 const AGENT_META = {
-  log: { label:'LOGISTICS',   colorClass:'al',  color:'#00d4ff' },
-  fin: { label:'FINANCE',     colorClass:'af',  color:'#39d98a' },
-  pro: { label:'PROCUREMENT', colorClass:'ap',  color:'#ffb340' },
-  sal: { label:'SALES',       colorClass:'as_', color:'#9b5de5' },
+  log: { label:'LOGISTICS',   colorClass:'al' },
+  fin: { label:'FINANCE',     colorClass:'af' },
+  pro: { label:'PROCUREMENT', colorClass:'ap' },
+  sal: { label:'SALES',       colorClass:'as_' },
 }
 
 export default function AgentCard({ id, data }) {
-  const meta = AGENT_META[id] ?? { label:id.toUpperCase(), colorClass:'al', color:'#00d4ff' }
+  const meta = AGENT_META[id] ?? { label:id.toUpperCase(), colorClass:'al' }
   const {
     status      = 'STANDBY',
     statusClass = 'idle',
