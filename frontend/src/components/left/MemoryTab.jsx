@@ -424,8 +424,13 @@ export default function MemoryTab() {
         ))}
       </div>
 
-      {/* Loading skeleton */}
-      {loading && memories.length === 0 && <MemorySkeleton />}
+      {/* Loading state */}
+      {loading && memories.length === 0 && (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'160px', gap:'12px' }}>
+          <img src="/shield-icon.png" alt="Loading" className="loading-shield-icon" />
+          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>Loading memories…</div>
+        </div>
+      )}
 
       {/* Error state */}
       {error && !loading && (
@@ -457,7 +462,7 @@ export default function MemoryTab() {
           gap: 10,
           opacity: 0.35,
         }}>
-          <div style={{ fontSize: 24 }}>🧠</div>
+          <img src="/shield-icon.png" alt="" className="empty-shield-icon" />
           <div style={{
             fontFamily: "'JetBrains Mono',monospace",
             fontSize: 11,
