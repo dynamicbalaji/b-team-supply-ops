@@ -38,8 +38,11 @@ export default function Nav({ scenario, onScenarioChange, onStartScenario, onRes
   return (
     <nav className="nav">
       <div className="logo">
-        <div className="logo-icon">⬡</div>
-        ChainGuard<span style={{ color: '#00d4ff' }}>AI</span>
+        <img
+          src="/chainguard-logo.png"
+          alt="ChainGuardAI"
+          className="logo-img"
+        />
       </div>
 
       <div className="nav-alert">
