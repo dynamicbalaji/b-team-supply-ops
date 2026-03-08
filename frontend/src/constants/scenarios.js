@@ -10,6 +10,7 @@ export const SCENARIOS = {
     blockedAt: '🔴 Long Beach',
     // Crisis banner sub-text
     traditional: '~$149K/72h',
+    tradTime: '72h',
     // SplitTab — traditional side
     trad: {
       emails: [
@@ -36,6 +37,7 @@ export const SCENARIOS = {
     origin:  '📦 Shanghai Port',
     blockedAt: '🟡 LAX Customs',
     traditional: '~$120K/72h',
+    tradTime: '72h',
     trad: {
       emails: [
         { from:'logistics.ops@company.com',    time:'Day 1, 07:30', subj:'RE: Customs Hold — Shanghai LAX', body:'CBP flagged shipment for additional inspection. No ETA on release. Production line at risk.' },
@@ -60,6 +62,7 @@ export const SCENARIOS = {
     origin:  '🏭 Taiwan Fab',
     blockedAt: '🔴 Supplier Bankrupt',
     traditional: '~$280K/90d',
+    tradTime: '90d',
     trad: {
       emails: [
         { from:'procurement.lead@company.com',  time:'Day 1, 06:00', subj:'URGENT: ChipTech filing Chapter 11', body:'Our primary fab just filed for bankruptcy. $20M order in limbo. Production halt in 8 days.' },

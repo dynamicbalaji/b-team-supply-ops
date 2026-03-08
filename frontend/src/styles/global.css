@@ -82,7 +82,7 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--t1);display:
 .ticker-sub{font-size:9px;color:#3d5a72;font-family:'JetBrains Mono',monospace;}
 
 /* ── MAIN GRID ── */
-.main{display:grid;grid-template-columns:1fr 358px;flex:1;min-height:0;overflow:hidden;}
+.main{display:grid;grid-template-columns:60% 40%;flex:1;min-height:0;overflow:hidden;}
 
 /* ── LEFT ── */
 .left{display:flex;flex-direction:column;border-right:1px solid var(--bdr);overflow:hidden;}

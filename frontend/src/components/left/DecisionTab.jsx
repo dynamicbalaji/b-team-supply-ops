@@ -31,7 +31,19 @@ function drawChart(el, mcDistribution) {
   })
 }
 
-export default function DecisionTab({ mcDistribution, mcStats, isActive }) {
+const ESG_DOT = { low:'🟢', medium:'🟡', high:'🔴' }
+
+function riskBar(score) {
+  const pct = Math.round((score / 10) * 100)
+  const color = score <= 3 ? '#39d98a' : score <= 6 ? '#ffb340' : '#ff3b5c'
+  return `<div style="display:flex;align-items:center;gap:5px">
+    <div style="width:${pct * 0.7}px;height:4px;border-radius:2px;background:${color}"></div>
+    <span>${score}/10</span>
+  </div>`
+}
+
+export default function DecisionTab({ mcDistribution, mcStats, isActive, approvalData, isRunning }) {
+  const everStarted = isRunning || !!mcDistribution || !!approvalData
   const [pen, setPen]           = useState(2000)
   const [dl,  setDl ]           = useState(48)
   const [bud, setBud]           = useState(500)
@@ -72,6 +84,23 @@ export default function DecisionTab({ mcDistribution, mcStats, isActive }) {
 
   const savings = Math.round(220 * (pen / 2000) * (bud / 500))
   const stats   = mcStats || { mean: 280000, p10: 241000, p90: 318000, ci: 0.94 }
+
+  if (!everStarted) {
+    return (
+      <div style={{
+        display:'flex', flexDirection:'column', alignItems:'center',
+        justifyContent:'center', height:'100%', gap:'12px', opacity:.35,
+      }}>
+        <div style={{ fontSize:'28px' }}>📊</div>
+        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#3d5a72' }}>
+          Run a scenario to populate
+        </div>
+        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#3d5a72' }}>
+          the Decision Matrix
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="dpan">
@@ -118,43 +147,58 @@ export default function DecisionTab({ mcDistribution, mcStats, isActive }) {
       {/* ── Decision Matrix ── */}
       <div className="sec-hd">
         <div className="sec-ttl">Decision Matrix</div>
-        <span className="bdg brec">✦ HYBRID OPTIMAL</span>
+        <span className="bdg brec">
+          ✦ {((approvalData?.option || approvalData?.recommended || 'HYBRID').toUpperCase())} OPTIMAL
+        </span>
       </div>
 
-      <table className="mtbl">
-        <thead>
-          <tr>
-            <th>Option</th><th>Cost</th><th>Time</th>
-            <th>Risk</th><th>ESG</th><th>Customer</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><span className="oname">Air Freight</span></td>
-            <td style={{ color: '#ff3b5c' }}>$500K</td>
-            <td>24h</td>
-            <td><div className="rbar"><div className="rf rlo" style={{ width: '18px' }} />2/10</div></td>
-            <td>🔴</td>
-            <td><span className="bdg bgrn">None</span></td>
-          </tr>
-          <tr>
-            <td><span className="oname">Spot Buy</span></td>
-            <td style={{ color: '#ffb340' }}>$380K</td>
-            <td>12h</td>
-            <td><div className="rbar"><div className="rf rhi" style={{ width: '62px' }} />7/10</div></td>
-            <td>🟡</td>
-            <td><span className="bdg born">20% short</span></td>
-          </tr>
-          <tr className="rec">
-            <td><span className="oname" style={{ color: NEW_GREEN }}>✦ Hybrid</span></td>
-            <td style={{ color: NEW_GREEN }}>$280K</td>
-            <td>36h</td>
-            <td><div className="rbar"><div className="rf rmd" style={{ width: '36px' }} />4/10</div></td>
-            <td>🟡</td>
-            <td><span className="bdg born">Minor</span></td>
-          </tr>
-        </tbody>
-      </table>
+      {(() => {
+        // Build options: prefer live approvalData.options[], fall back to static defaults
+        const liveOptions = approvalData?.options || approvalData?.matrix || null
+        const recommended = approvalData?.option || approvalData?.recommended || 'hybrid'
+        const staticOptions = [
+          { name:'Air Freight', cost:500000, time:'24h', risk:2, esg:'high',   customer:'None'     },
+          { name:'Spot Buy',    cost:380000, time:'12h', risk:7, esg:'medium', customer:'20% short'},
+          { name:'Hybrid',      cost:280000, time:'36h', risk:4, esg:'medium', customer:'Minor'    },
+        ]
+        const options = liveOptions || staticOptions
+        const recName = recommended?.toLowerCase()
+
+        return (
+          <table className="mtbl">
+            <thead>
+              <tr><th>Option</th><th>Cost</th><th>Time</th><th>Risk</th><th>ESG</th><th>Customer</th></tr>
+            </thead>
+            <tbody>
+              {options.map((opt, i) => {
+                const name    = opt.name || opt.option || opt.label || ''
+                const cost    = opt.cost ?? opt.cost_usd ?? 0
+                const costK   = cost >= 1000 ? `$${Math.round(cost/1000)}K` : `$${cost}`
+                const time    = opt.time || opt.delivery_time || '—'
+                const risk    = typeof opt.risk === 'number' ? opt.risk : (opt.risk_score ?? 5)
+                const esg     = opt.esg || (risk <= 3 ? 'low' : risk <= 6 ? 'medium' : 'high')
+                const cust    = opt.customer || opt.customer_impact || '—'
+                const isRec   = name.toLowerCase().includes(recName) || opt.recommended === true
+                const costClr = cost > 400000 ? '#ff3b5c' : cost > 300000 ? '#ffb340' : NEW_GREEN
+                const riskW   = `${Math.round((risk / 10) * 70)}px`
+                const riskCls = risk <= 3 ? 'rlo' : risk <= 6 ? 'rmd' : 'rhi'
+                return (
+                  <tr key={i} className={isRec ? 'rec' : ''}>
+                    <td><span className="oname" style={isRec ? { color: NEW_GREEN } : {}}>
+                      {isRec ? '✦ ' : ''}{name}
+                    </span></td>
+                    <td style={{ color: costClr }}>{costK}</td>
+                    <td>{time}</td>
+                    <td><div className="rbar"><div className={`rf ${riskCls}`} style={{ width: riskW }} />{risk}/10</div></td>
+                    <td>{ESG_DOT[esg] || '🟡'}</td>
+                    <td><span className={`bdg ${isRec ? 'born' : 'bgrn'}`}>{cust}</span></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )
+      })()}
 
       {/* ── Monte Carlo ── */}
       <div className="mccard">
