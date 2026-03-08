@@ -242,10 +242,11 @@ async def _awaiting_approval(state: RunGraphState) -> RunGraphState:
     await redis_client.set_run_state(
         run_id,
         {
-            "run_id":   run_id,
-            "scenario": scenario,
-            "status":   RunStatus.AWAITING_APPROVAL,
-            "context":  safe_ctx,
+            "run_id":     run_id,
+            "scenario":   scenario,
+            "status":     RunStatus.AWAITING_APPROVAL,
+            "context":    safe_ctx,
+            "started_at": started_at,
         },
     )
 
@@ -331,9 +332,10 @@ _GRAPH_APP = _build_orchestrator_graph()
 
 
 class _CascadeState(TypedDict, total=False):
-    run_id:     str
-    started_at: float
-    scenario:   ScenarioType
+    run_id:      str
+    started_at:  float
+    scenario:    ScenarioType
+    run_context: dict
 
 
 async def _exec_phase_transition(state: _CascadeState) -> _CascadeState:
@@ -443,16 +445,24 @@ async def _exec_complete(state: _CascadeState) -> _CascadeState:
     from models import CompleteEvent
     from agents.base import elapsed as _elapsed
 
-    run_id     = state["run_id"]
-    started_at = state.get("started_at") or time.time()
+    run_id      = state["run_id"]
+    started_at  = state.get("started_at") or time.time()
+    scenario    = state.get("scenario", ScenarioType.PORT_STRIKE)
+    run_context = state.get("run_context") or {}
+
+    # Derive real cost + saved from the run context written at approval time
+    finance_ctx  = run_context.get("finance", {})
+    cost_usd     = finance_ctx.get("hybrid_cost") or 280_000
+    sc           = SCENARIO_DEFINITIONS[scenario]
+    saved_usd    = max(sc.penalty_usd - cost_usd, 0)
 
     await _phase(run_id, 4, "done")
     await _phase(run_id, 5, "active")
     await _map(run_id, "DELIVERED ✅", "#00e676")
     await redis_client.publish(run_id, CompleteEvent(
         resolution_time=_elapsed(started_at),
-        cost_usd=280_000,
-        saved_usd=220_000,
+        cost_usd=cost_usd,
+        saved_usd=saved_usd,
         message_count=9,
     ).model_dump())
     await _phase(run_id, 5, "done")
@@ -520,19 +530,26 @@ async def run_execution_cascade_graph(run_id: str, started_at: float) -> None:
     Redis publish inside each node.  No asyncio.sleep timing loops here;
     the node sequence itself is the execution schedule.
     """
-    # Load scenario from Redis state so cascade messages are scenario-aware
+    # Load scenario + original started_at + run_context from Redis state
     try:
         run_state = await redis_client.get_run_state(run_id)
-        scenario_val = (run_state or {}).get("scenario", ScenarioType.PORT_STRIKE)
+        rs = run_state or {}
+        scenario_val = rs.get("scenario", ScenarioType.PORT_STRIKE)
         if isinstance(scenario_val, str):
             scenario_val = ScenarioType(scenario_val)
+        # Use the original scenario started_at so execution timestamps are continuous
+        original_started_at = rs.get("started_at") or started_at
+        cascade_run_context = rs.get("context") or {}
     except Exception:
         scenario_val = ScenarioType.PORT_STRIKE
+        original_started_at = started_at
+        cascade_run_context = {}
 
     initial: _CascadeState = {
-        "run_id":     run_id,
-        "started_at": started_at,
-        "scenario":   scenario_val,
+        "run_id":      run_id,
+        "started_at":  original_started_at,
+        "scenario":    scenario_val,
+        "run_context": cascade_run_context,
     }
     await _CASCADE_GRAPH.ainvoke(initial)
 

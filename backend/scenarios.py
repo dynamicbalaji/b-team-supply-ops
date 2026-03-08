@@ -635,7 +635,7 @@ def get_execution_steps(scenario: ScenarioType = ScenarioType.PORT_STRIKE) -> li
             "event": CompleteEvent(
                 resolution_time="4m 32s",
                 cost_usd=280_000,
-                saved_usd=220_000,
+                saved_usd=max(sc.penalty_usd - 280_000, 0),
                 message_count=9,
             ).model_dump(),
         },
