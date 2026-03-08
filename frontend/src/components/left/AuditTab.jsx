@@ -140,8 +140,13 @@ export default function AuditTab({ runId, auditItems = [], scenario, isRunning }
         </button>
       </div>
 
-      {/* Loading skeletons */}
-      {loading && items.length === 0 && <AuditSkeleton />}
+      {/* Loading state */}
+      {loading && items.length === 0 && (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'160px', gap:'12px' }}>
+          <img src="/shield-icon.png" alt="Loading" className="loading-shield-icon" />
+          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>Fetching audit trail…</div>
+        </div>
+      )}
 
       {/* Empty state */}
       {!loading && items.length === 0 && (
@@ -149,7 +154,7 @@ export default function AuditTab({ runId, auditItems = [], scenario, isRunning }
           display:'flex', flexDirection:'column', alignItems:'center',
           justifyContent:'center', height:'200px', gap:'10px', opacity:.35,
         }}>
-          <div style={{ fontSize:'24px' }}>📋</div>
+          <img src="/shield-icon.png" alt="" className="empty-shield-icon" />
           <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#3d5a72' }}>
             {runId ? 'Waiting for agents…' : 'Run a scenario to see the audit trail'}
           </div>

@@ -12,7 +12,7 @@ export default function AgentNetwork({ agents, riskAgent }) {
     <div className="agnet">
       <div className="agnet-hdr" onClick={() => setCollapsed(v => !v)}>
         <div className="agnet-htitle">
-          ⬡ Agent Network
+          <img src="/shield-icon.png" alt="" className="hdr-shield-icon" /> Agent Network
           <div className="agnet-live">
             <div className="dot" />
             <span>{activeCount} active</span>
