@@ -79,6 +79,7 @@ from graph.sales_agent_graph import run_sales_agent
 from graph.risk_agent_graph import run_risk_agent
 
 from agents.orchestrator_live import _orc_msg, _phase, _map, _safe_context_summary
+from audit_helpers import publish_audit_event
 from .state import RunGraphState
 
 
@@ -116,6 +117,22 @@ async def _round1_logistics(state: RunGraphState) -> RunGraphState:
     await run_logistics_agent(
         state["run_id"], state["scenario"], run_context, state["started_at"]
     )
+    # ── Audit: Logistics route proposal ──────────────────────────────────
+    log_out = run_context.get("logistics", {})
+    cost_k  = log_out.get("cost_usd", 0) // 1000
+    hrs     = log_out.get("transit_hours", 36)
+    mem     = log_out.get("memory")
+    mem_note = f"📚 Recalled precedent: {mem.get('memory_key', '')}" if mem else None
+    await publish_audit_event(
+        run_id      = state["run_id"],
+        started_at  = state["started_at"],
+        agent_color = "#00d4ff",
+        agent_label = "✈ Logistics Agent",
+        step_name   = "Route Options",
+        description = f"Hybrid 60/40 recommended at ${cost_k}K over {hrs}h. Air-only evaluated and rejected on cost.",
+        data        = f"check_freight_rates() · hybrid=${cost_k}K · air=${log_out.get('air_option_cost', 0) // 1000}K",
+        memory_note = mem_note,
+    )
     return {**state, "run_context": run_context}
 
 
@@ -124,6 +141,17 @@ async def _round1_procurement(state: RunGraphState) -> RunGraphState:
     run_context = dict(state["run_context"])
     await run_procurement_agent(
         state["run_id"], state["scenario"], run_context, state["started_at"]
+    )
+    # ── Audit: Procurement supplier evaluation ────────────────────────────
+    proc_out = run_context.get("procurement", {})
+    await publish_audit_event(
+        run_id      = state["run_id"],
+        started_at  = state["started_at"],
+        agent_color = "#ffb340",
+        agent_label = "📦 Procurement Agent",
+        step_name   = "Supplier Evaluation",
+        description = proc_out.get("response_text", "Supplier alternatives evaluated. Backup supplier identified.")[:160],
+        data        = "check_supplier_inventory() · spot_purchase_options()",
     )
     await _phase(state["run_id"], 1, "done")
     await _phase(state["run_id"], 2, "active")
@@ -135,6 +163,23 @@ async def _round2_finance(state: RunGraphState) -> RunGraphState:
     run_context = dict(state["run_context"])
     await run_finance_agent(
         state["run_id"], state["scenario"], run_context, state["started_at"]
+    )
+    # ── Audit: Finance Monte Carlo + customs challenge ────────────────────
+    fin_out  = run_context.get("finance", {})
+    mc       = fin_out.get("mc_result", {})
+    mean_k   = mc.get("mean_usd", fin_out.get("hybrid_cost", 280_000)) // 1000
+    p10_k    = mc.get("p10_usd",  0) // 1000
+    p90_k    = mc.get("p90_usd",  0) // 1000
+    ci_pct   = int(mc.get("confidence_interval", 0.94) * 100)
+    sur_k    = fin_out.get("customs_surcharge", 0) // 1000
+    await publish_audit_event(
+        run_id      = state["run_id"],
+        started_at  = state["started_at"],
+        agent_color = "#39d98a",
+        agent_label = "💰 Finance Agent",
+        step_name   = "Monte Carlo + Customs",
+        description = f"100-iteration Monte Carlo complete. Mean ${mean_k}K · CI {ci_pct}%. Customs surcharge ${sur_k}K flagged.",
+        data        = f"run_monte_carlo(100) · P10=${p10_k}K · P90=${p90_k}K · customs=${sur_k}K",
     )
     return {**state, "run_context": run_context}
 
@@ -151,6 +196,19 @@ async def _round2b_logistics_revise(state: RunGraphState) -> RunGraphState:
         challenge=challenge_text,
         customs_surcharge=customs_surcharge,
     )
+    # ── Audit: Logistics revision after Finance challenge ─────────────────
+    log_out  = run_context.get("logistics", {})
+    cost_k   = log_out.get("cost_usd", 0) // 1000
+    sur_k    = customs_surcharge // 1000
+    await publish_audit_event(
+        run_id      = state["run_id"],
+        started_at  = state["started_at"],
+        agent_color = "#00d4ff",
+        agent_label = "✈ Logistics Agent",
+        step_name   = "Route Revision",
+        description = f"Hybrid reconfirmed at ${cost_k}K absorbing ${sur_k}K customs. Air-only definitively rejected.",
+        data        = f"recalculate_route() · revised_cost=${cost_k}K · customs_absorbed=${sur_k}K",
+    )
     return {**state, "run_context": run_context}
 
 
@@ -160,6 +218,20 @@ async def _round3_sales(state: RunGraphState) -> RunGraphState:
     await run_sales_agent(
         state["run_id"], state["scenario"], run_context, state["started_at"]
     )
+    # ── Audit: Sales SLA amendment ────────────────────────────────────────
+    sal_out  = run_context.get("sales", {})
+    ext_hrs  = sal_out.get("extension_hours", 36)
+    waived   = sal_out.get("penalty_waived", True)
+    customer = sal_out.get("customer", "Customer")
+    await publish_audit_event(
+        run_id      = state["run_id"],
+        started_at  = state["started_at"],
+        agent_color = "#9b5de5",
+        agent_label = "📧 Sales Agent",
+        step_name   = "SLA Amendment",
+        description = f"{customer} SLA amended: +{ext_hrs}h extension granted. Penalty {'waived' if waived else 'applied'}.",
+        data        = f"get_customer_contract() · amend_sla(extension={ext_hrs}h) · penalty_waived={waived}",
+    )
     return {**state, "run_context": run_context}
 
 
@@ -168,6 +240,18 @@ async def _round4_risk(state: RunGraphState) -> RunGraphState:
     run_context = dict(state["run_context"])
     await run_risk_agent(
         state["run_id"], state["scenario"], run_context, state["started_at"]
+    )
+    # ── Audit: Risk devil's advocate ──────────────────────────────────────
+    risk_out = run_context.get("risk", {})
+    risk_txt = risk_out.get("challenge_text", "Secondary risk factors evaluated.")
+    await publish_audit_event(
+        run_id      = state["run_id"],
+        started_at  = state["started_at"],
+        agent_color = "#ff3b5c",
+        agent_label = "⚠ Risk Agent",
+        step_name   = "Devil's Advocate",
+        description = risk_txt[:160],
+        data        = "risk_assessment() · contingency_check()",
     )
     return {**state, "run_context": run_context}
 
@@ -193,6 +277,22 @@ async def _round5_consensus(state: RunGraphState) -> RunGraphState:
         tool="✅ acknowledged()", confidence=0.71, pulsing=False,
     )
     run_context.setdefault("procurement", {})["consensus"] = True
+
+    # ── Audit: Final consensus ────────────────────────────────────────────
+    fin_out  = run_context.get("finance", {})
+    mc       = fin_out.get("mc_result", {})
+    cost_k   = fin_out.get("hybrid_cost", 280_000) // 1000
+    ci_pct   = int(mc.get("confidence_interval", 0.94) * 100)
+    res_k    = 20
+    await publish_audit_event(
+        run_id      = run_id,
+        started_at  = started_at,
+        agent_color = "#39d98a",
+        agent_label = "💰 Finance Agent",
+        step_name   = "Consensus Reached",
+        description = f"All agents aligned. Hybrid route authorised at ${cost_k}K + ${res_k}K reserve. CI {ci_pct}%. Awaiting VP approval.",
+        data        = f"final_cost=${cost_k}K · reserve=${res_k}K · confidence={ci_pct}%",
+    )
 
     return {**state, "run_context": run_context}
 
@@ -265,7 +365,7 @@ async def _awaiting_approval(state: RunGraphState) -> RunGraphState:
                 await turso_client.save_memory(
                     memory_key=f"run_{run_id[:8]}_{scenario.value}",
                     scenario_type=scenario.value,
-                    date_label=_time.strftime("%B %Y"),
+                    date_label=_time.strftime("%Y-%m-%d"),
                     crisis=sc.crisis_title,
                     decision=(
                         f"Hybrid route — ${logistics['cost_usd'] // 1000}K / "
@@ -286,6 +386,16 @@ async def _awaiting_approval(state: RunGraphState) -> RunGraphState:
     except Exception as mem_exc:
         print(f"   [orchestrator.graph] TursoDB persist skipped: {mem_exc}")
 
+    # ── Audit: Approval gate ─────────────────────────────────────────────
+    await publish_audit_event(
+        run_id      = run_id,
+        started_at  = started_at,
+        agent_color = "#ffb340",
+        agent_label = "⏸ Orchestrator",
+        step_name   = "Awaiting Approval",
+        description = f"Hybrid route paused for VP sign-off. ${hybrid_cost // 1000}K · {transit_hours}h · CI {int(confidence * 100)}%.",
+        data        = f"option=hybrid · cost=${hybrid_cost // 1000}K · confidence={int(confidence * 100)}%",
+    )
     return {**state, "run_context": run_context, "status": RunStatus.AWAITING_APPROVAL}
 
 
@@ -465,6 +575,19 @@ async def _exec_complete(state: _CascadeState) -> _CascadeState:
         saved_usd=saved_usd,
         message_count=9,
     ).model_dump())
+    # ── Audit: Approved & executed ────────────────────────────────────────
+    from audit_helpers import publish_audit_event as _pae
+    saved_k = saved_usd // 1000
+    cost_k  = cost_usd  // 1000
+    await _pae(
+        run_id      = run_id,
+        started_at  = started_at,
+        agent_color = "#39d98a",
+        agent_label = "✅ VP Operations",
+        step_name   = "Approved & Executed",
+        description = f"Hybrid route approved and executed. ${cost_k}K spent · ${saved_k}K saved vs traditional. All agents stood down.",
+        data        = f"approved=hybrid · cost=${cost_k}K · saved=${saved_k}K · elapsed={_elapsed(started_at)}",
+    )
     await _phase(run_id, 5, "done")
     return state
 

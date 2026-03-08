@@ -286,7 +286,7 @@ export default function App() {
       <Nav scenario={state.scenario} onScenarioChange={handleScenarioChange}
         onStartScenario={startScenario} onReset={resetScenario}
         theme={theme} onThemeToggle={toggleTheme} />
-      <CrisisBanner scenario={state.scenario} tickerValue={tickerValue} />
+      <CrisisBanner scenario={state.scenario} tickerValue={tickerValue} isApproved={state.isApproved} />
       <div className="main">
         <LeftPanel
           activeTab={activeTab} onTabChange={setActiveTab}

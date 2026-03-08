@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { SCENARIOS } from '../../constants/scenarios'
 
-const AGENT_COLOR  = { log:'#00d4ff', fin:'#39d98a', pro:'#ffb340', sal:'#9b5de5', risk:'#ff3b5c', orc:'#00d4ff' }
+const AGENT_COLOR  = { log:'var(--acc)', fin:'var(--grn)', pro:'var(--orn)', sal:'var(--pur)', risk:'var(--red)', orc:'var(--acc)' }
 const AGENT_LABEL  = { log:'🔵 Logistics Agent', fin:'🟢 Finance Agent', pro:'🟠 Procurement Agent', sal:'🟣 Sales Agent', risk:'🔴 Risk Agent', orc:'🎯 Orchestrator' }
-const AGENT_BG     = { log:'rgba(0,212,255,.04)', fin:'rgba(57,217,138,.04)', pro:'rgba(255,179,64,.04)', sal:'rgba(155,93,229,.04)', risk:'rgba(255,59,92,.04)', orc:'rgba(0,212,255,.04)' }
-const AGENT_BORDER = { log:'rgba(0,212,255,.18)', fin:'rgba(57,217,138,.18)', pro:'rgba(255,179,64,.18)', sal:'rgba(155,93,229,.18)', risk:'rgba(255,59,92,.18)', orc:'rgba(0,212,255,.18)' }
+const AGENT_BG     = { log:'var(--bub-log-bg)', fin:'var(--bub-fin-bg)', pro:'var(--bub-pro-bg)', sal:'var(--bub-sal-bg)', risk:'var(--bub-risk-bg)', orc:'var(--bub-orc-bg)' }
+// For border colors, we'll create a subtle version of the main colors using CSS calc or fallback to main colors
+const AGENT_BORDER = { log:'var(--acc)', fin:'var(--grn)', pro:'var(--orn)', sal:'var(--pur)', risk:'var(--red)', orc:'var(--acc)' }
 
 // Traditional: slow — one email every ~2s
 const TRAD_DELAYS = [0, 2200, 4800, 7500, 10800]
@@ -112,14 +113,14 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
       {/* ── Shared replay bar ── */}
       <div style={{
         display:'flex', justifyContent:'space-between', alignItems:'center',
-        padding:'5px 14px', borderBottom:'1px solid #1d2d40',
-        background:'#090e15', flexShrink:0,
+        padding:'5px 14px', borderBottom:'1px solid var(--bdr)',
+        background:'var(--bg)', flexShrink:0,
       }}>
         <div style={{ display:'flex', gap:'14px' }}>
-          <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'#ff3b5c', opacity:.8 }}>
+          <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'var(--red)', opacity:.8 }}>
             🐌 Traditional: ~12s / step
           </span>
-          <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'#39d98a', opacity:.8 }}>
+          <span style={{ fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", color:'var(--grn)', opacity:.8 }}>
             ⚡ AI: ~0.4s / step
           </span>
         </div>
@@ -127,14 +128,14 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
           onClick={handleReplay}
           disabled={replaying}
           style={{
-            background:'transparent', border:`1px solid ${replaying ? '#1d2d40' : '#1d2d40'}`,
-            borderRadius:'4px', color: replaying ? '#3d5a72' : '#7aa0be',
+            background:'transparent', border:`1px solid ${replaying ? 'var(--bdr)' : 'var(--bdr)'}`,
+            borderRadius:'4px', color: replaying ? 'var(--t3)' : 'var(--t2)',
             cursor: replaying ? 'not-allowed' : 'pointer',
             padding:'3px 10px', fontSize:'9px',
             fontFamily:"'JetBrains Mono',monospace", letterSpacing:'.08em', transition:'all .2s',
           }}
-          onMouseEnter={e => { if (!replaying) e.currentTarget.style.cssText += 'color:#00d4ff;border-color:#00d4ff55;' }}
-          onMouseLeave={e => { if (!replaying) e.currentTarget.style.cssText += 'color:#7aa0be;border-color:#1d2d40;' }}
+          onMouseEnter={e => { if (!replaying) e.currentTarget.style.cssText += 'color:var(--acc);border-color:var(--acc);' }}
+          onMouseLeave={e => { if (!replaying) e.currentTarget.style.cssText += 'color:var(--t2);border-color:var(--bdr);' }}
         >
           {replaying ? '⏵ replaying…' : '↺ REPLAY BOTH PANELS'}
         </button>
@@ -145,7 +146,7 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
         {/* ── Traditional — left ── */}
         <div className="sp trad">
           <div className="sp-hd">
-            <div className="sp-title" style={{ color:'#ff3b5c' }}>📧 Traditional Process</div>
+            <div className="sp-title" style={{ color:'var(--red)' }}>📧 Traditional Process</div>
             <div className="sp-time slow">72:00:00</div>
           </div>
 
@@ -162,7 +163,7 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
             ) : (
               <div key={i} className="eml" style={{
                 opacity:.08, minHeight:'62px', background:'transparent',
-                border:'1px dashed #1d2d40',
+                border:'1px dashed var(--bdr)',
               }} />
             )
           ))}
@@ -175,14 +176,14 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
         {/* ── ChainGuard AI — right ── */}
         <div className="sp ai">
           <div className="sp-hd">
-            <div className="sp-title" style={{ color:'#39d98a' }}>🤖 ChainGuard AI</div>
+            <div className="sp-title" style={{ color:'var(--grn)' }}>🤖 ChainGuard AI</div>
             <div className="sp-time fast">{everStarted ? aiTime : '—'}</div>
           </div>
 
           {!everStarted ? (
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', flex:1, gap:'8px', opacity:.35, paddingTop:'40px' }}>
-              <div style={{ fontSize:'22px' }}>🤖</div>
-              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72', textAlign:'center' }}>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', flex:1, gap:'8px', paddingTop:'40px' }}>
+              <div style={{ fontSize:'22px',opacity:.35, }}>🤖</div>
+              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'11px' }}  className="msg-empty-txt">
                 Start a scenario to see<br/>the AI resolution
               </div>
             </div>
@@ -199,12 +200,12 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
               {displayMessages.length > 0 ? (
                 displayMessages.slice(0, visibleAI).map(msg => (
                   <div key={msg.id} className="eml" style={{
-                    background:  AGENT_BG[msg.agent]     || 'rgba(0,212,255,.04)',
-                    borderColor: AGENT_BORDER[msg.agent] || 'rgba(0,212,255,.18)',
+                    background:  AGENT_BG[msg.agent]     || 'var(--bub-log-bg)',
+                    borderColor: AGENT_BORDER[msg.agent] || 'var(--acc)',
                     opacity:0, animation:'fadein 0.35s forwards',
                   }}>
                     <div className="er">
-                      <span className="efrom" style={{ color: AGENT_COLOR[msg.agent] || '#00d4ff' }}>
+                      <span className="efrom" style={{ color: AGENT_COLOR[msg.agent] || 'var(--acc)' }}>
                         {AGENT_LABEL[msg.agent] || msg.from || msg.agent}
                       </span>
                       <span className="etime">{msg.time}</span>
@@ -216,8 +217,8 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
                       const body   = dotIdx > 0 && dotIdx < 80 ? clean.slice(dotIdx + 1).trim() : clean.slice(60).trim()
                       return (
                         <>
-                          <div className="esubj" style={{ color:'#ddeeff' }}>{subj}</div>
-                          {body && <div className="ebody" style={{ color:'#7aa0be' }}>{body}</div>}
+                          <div className="esubj">{subj}</div>
+                          {body && <div className="ebody">{body}</div>}
                         </>
                       )
                     })()}
@@ -229,12 +230,12 @@ export default function SplitTab({ scenario, messages, resolutionTime, costSaved
                   </div>
                 ))
               ) : (
-                <div className="eml" style={{ background:'rgba(0,212,255,.04)', borderColor:'rgba(0,212,255,.18)', opacity:.5 }}>
+                <div className="eml" style={{ background:'var(--bub-log-bg)', borderColor:'var(--acc)', opacity:.5 }}>
                   <div className="er">
-                    <span className="efrom" style={{ color:'#00d4ff' }}>🔵 Logistics Agent</span>
+                    <span className="efrom" style={{ color:'var(--acc)' }}>🔵 Logistics Agent</span>
                     <span className="etime">--:--</span>
                   </div>
-                  <div className="esubj" style={{ color:'#3d5a72' }}>
+                  <div className="esubj">
                     {isRunning ? 'Agents processing…' : 'Awaiting scenario start…'}
                   </div>
                 </div>

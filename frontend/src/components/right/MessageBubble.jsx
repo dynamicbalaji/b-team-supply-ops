@@ -1,6 +1,5 @@
 export default function MessageBubble({ msg }) {
   const {
-    agentColor = '#00d4ff',
     agentClass = 'al',
     from       = '',
     to         = '',
@@ -16,7 +15,7 @@ export default function MessageBubble({ msg }) {
     <div className="msg">
       {/* Header row */}
       <div className="mh">
-        <span className="mfrom" style={{ color: agentColor }}>{from}</span>
+        <span className="mfrom">{from}</span>
         <span className="mto">{to}</span>
         <span className="mtime">{time}</span>
       </div>
