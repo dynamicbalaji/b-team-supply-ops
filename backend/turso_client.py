@@ -198,7 +198,7 @@ _SEED_MEMORY = [
     {
         "memory_key": "LA_port_strike",
         "scenario_type": "port_strike",
-        "date_label": "March 2024",
+        "date_label": "2024-03-06",
         "crisis": "ILWU walkout — Long Beach + LA ports closed 11 days",
         "decision": "Hybrid 60/40 air/sea split via LAX + Oakland",
         "outcome": "Delivered within 38h. Zero penalty.",
@@ -210,7 +210,7 @@ _SEED_MEMORY = [
     {
         "memory_key": "Shanghai_customs_2023",
         "scenario_type": "customs_delay",
-        "date_label": "September 2023",
+        "date_label": "2023-09-15",
         "crisis": "SAMR hold on semiconductor exports — 72h freeze",
         "decision": "Reroute via Busan + ATA carnet pre-clearance at LAX",
         "outcome": "Cleared in 29h. $1.2M penalty avoided.",
@@ -222,7 +222,7 @@ _SEED_MEMORY = [
     {
         "memory_key": "Taiwan_drought_2022",
         "scenario_type": "supplier_breach",
-        "date_label": "July 2022",
+        "date_label": "2022-07-30",
         "crisis": "TSMC production halt — water rationing reduced fab output 35%",
         "decision": "Dual-source Samsung Suwon + MediaTek Thailand for 60-day bridge",
         "outcome": "Zero stockout. Production maintained.",
@@ -561,19 +561,64 @@ async def recall_memory(query_keywords: list[str], scenario_type: str) -> dict |
     return None
 
 
+def _iso_to_human(iso: str) -> str:
+    """No-op kept for call-site compatibility — DB stores full YYYY-MM-DD,
+    frontend handles all display formatting."""
+    return iso or ""
+
+
 def _memory_row_to_dict(r) -> dict:
     return {
-        "memory_key":   r[0],
+        "memory_key":    r[0],
         "scenario_type": r[1],
-        "date":         r[2],
-        "crisis":       r[3],
-        "decision":     r[4],
-        "outcome":      r[5],
-        "cost_usd":     r[6],
-        "saved_usd":    r[7],
-        "key_learning": r[8],
-        "confidence":   r[9],
+        "date":          r[2] or "",   # YYYY-MM-DD ISO — frontend formats for display
+        "crisis":        r[3],
+        "decision":      r[4],
+        "outcome":       r[5],
+        "cost_usd":      r[6],
+        "saved_usd":     r[7],
+        "key_learning":  r[8],
+        "confidence":    r[9],
     }
+
+
+def _normalise_date_to_iso(date_str: str) -> str:
+    """
+    Coerce any date string to YYYY-MM-DD ISO format before storing.
+
+    Accepts:
+      - Already-valid ISO: '2024-03-01'  → '2024-03-01'
+      - Year-month ISO:    '2024-03'     → '2024-03-01'
+      - Freeform English:  'March 2024'  → '2024-03-01'
+      - strftime output:   '%B %Y' / '%Y-%m-%d' both handled
+    """
+    from datetime import datetime
+    if not date_str:
+        return datetime.utcnow().strftime("%Y-%m-%d")
+    # Already ISO YYYY-MM-DD
+    try:
+        datetime.strptime(date_str[:10], "%Y-%m-%d")
+        return date_str[:10]
+    except ValueError:
+        pass
+    # ISO YYYY-MM
+    try:
+        return datetime.strptime(date_str[:7], "%Y-%m").strftime("%Y-%m-01")
+    except ValueError:
+        pass
+    # "Month YYYY"  e.g. "March 2024"
+    try:
+        return datetime.strptime(date_str, "%B %Y").strftime("%Y-%m-01")
+    except ValueError:
+        pass
+    # "Mon YYYY" abbreviated  e.g. "Mar 2024"
+    try:
+        return datetime.strptime(date_str, "%b %Y").strftime("%Y-%m-01")
+    except ValueError:
+        pass
+    # Fallback: store today rather than a garbage string
+    log.warning("Could not parse date string %r — storing today's date", date_str)
+    return datetime.utcnow().strftime("%Y-%m-%d")
 
 
 async def save_memory(
@@ -590,8 +635,11 @@ async def save_memory(
 ) -> bool:
     """
     Insert or replace a memory record.
+    date_label is normalised to YYYY-MM-DD ISO format before storage so that
+    chronological ORDER BY works correctly regardless of what the caller passes.
     Called at end of each completed run to accumulate real operational history.
     """
+    iso_date = _normalise_date_to_iso(date_label)
     client = _get_client()
     if client is None:
         return False
@@ -602,7 +650,7 @@ async def save_memory(
                    (memory_key, scenario_type, date_label, crisis, decision,
                     outcome, cost_usd, saved_usd, key_learning, confidence)
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                [memory_key, scenario_type, date_label, crisis, decision,
+                [memory_key, scenario_type, iso_date, crisis, decision,
                  outcome, cost_usd, saved_usd, key_learning, confidence],
             )
         return True
@@ -685,3 +733,65 @@ async def query_contract(scenario_type: str) -> dict | None:
     except Exception as exc:
         log.error("TursoDB query_contract failed: %s", exc)
         return None
+
+
+# ── episodic_memory: list all ──────────────────────────────────────────────
+
+async def list_all_memories(
+    sort_by: str = "date_label",
+    order: str = "desc",
+) -> list[dict]:
+    """
+    Return all rows from episodic_memory, sorted by the given column.
+
+    sort_by: one of 'memory_key', 'scenario_type', 'date_label',
+             'cost_usd', 'saved_usd', 'confidence'
+    order  : 'asc' or 'desc'
+
+    date_label is stored as YYYY-MM-DD ISO so ORDER BY date_label works
+    chronologically.  Each returned dict includes:
+      date_iso   — the raw stored ISO value (for sorting / filtering)
+      date_label — human-readable 'Month YYYY' string (for display)
+
+    Falls back to the in-memory seed list when TursoDB is not configured.
+    """
+    ALLOWED_COLS  = {"memory_key", "scenario_type", "date_label",
+                     "cost_usd", "saved_usd", "confidence"}
+    ALLOWED_ORDER = {"asc", "desc"}
+
+    col  = sort_by if sort_by in ALLOWED_COLS else "date_label"
+    dir_ = order.lower() if order.lower() in ALLOWED_ORDER else "desc"
+
+    client = _get_client()
+    if client is None:
+        # In-memory fallback — seed rows store ISO date_label, sort is lexicographic = chronological
+        import operator
+        rows = sorted(_SEED_MEMORY, key=operator.itemgetter(col), reverse=(dir_ == "desc"))
+        return [
+            {
+                "memory_key":    r["memory_key"],
+                "scenario_type": r["scenario_type"],
+                "date":          r["date_label"],  # YYYY-MM-DD ISO
+                "crisis":        r["crisis"],
+                "decision":      r["decision"],
+                "outcome":       r["outcome"],
+                "cost_usd":      r["cost_usd"],
+                "saved_usd":     r["saved_usd"],
+                "key_learning":  r["key_learning"],
+                "confidence":    r["confidence"],
+            }
+            for r in rows
+        ]
+
+    try:
+        async with client as c:
+            rs = await c.execute(
+                f"""SELECT memory_key, scenario_type, date_label, crisis, decision,
+                           outcome, cost_usd, saved_usd, key_learning, confidence
+                    FROM episodic_memory
+                    ORDER BY {col} {dir_.upper()}"""
+            )
+            return [_memory_row_to_dict(r) for r in rs.rows]
+    except Exception as exc:
+        log.error("TursoDB list_all_memories failed: %s", exc)
+        return []
