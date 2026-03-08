@@ -41,10 +41,10 @@ SCENARIO_DEFINITIONS: dict[ScenarioType, ScenarioDefinition] = {
 
     ScenarioType.CUSTOMS_DELAY: ScenarioDefinition(
         id=ScenarioType.CUSTOMS_DELAY,
-        name="Customs Delay — Shanghai",
-        description="Regulatory hold on component exports from Shenzhen to LAX.",
+        name="Customs Delay — Shenzhen",
+        description="GACC regulatory hold on component exports from Shenzhen — shipment cannot clear for LAX.",
         crisis_title="$8M component shipment",
-        crisis_detail="held · Customs — Shenzhen → LAX · Risk: $1.5M penalty + production halt",
+        crisis_detail="held · Shenzhen Customs · Risk: $1.5M penalty + Samsung production halt",
         penalty_usd=1_500_000,
         deadline_hours=36,
         budget_cap_usd=400_000,
@@ -55,9 +55,9 @@ SCENARIO_DEFINITIONS: dict[ScenarioType, ScenarioDefinition] = {
     ScenarioType.SUPPLIER_BREACH: ScenarioDefinition(
         id=ScenarioType.SUPPLIER_BREACH,
         name="Supplier Bankruptcy — Taiwan",
-        description="Primary Taiwan fab has filed for bankruptcy mid-order.",
+        description="Primary Taiwan fab (ChipTech) has filed Chapter 11 mid-order. Replacement sourcing required.",
         crisis_title="$20M Taiwan fab order",
-        crisis_detail="cancelled · Supplier bankruptcy · Risk: $5M replacement cost + 90-day delay",
+        crisis_detail="cancelled · ChipTech bankruptcy · Risk: $5M replacement cost + 90-day delay",
         penalty_usd=5_000_000,
         deadline_hours=72,
         budget_cap_usd=800_000,
@@ -83,9 +83,9 @@ _SCENARIO_IDS = {
 }
 
 _SCENARIO_LOCATIONS = {
-    ScenarioType.PORT_STRIKE:     "Port of Long Beach",
-    ScenarioType.CUSTOMS_DELAY:   "Shenzhen Customs",
-    ScenarioType.SUPPLIER_BREACH: "Taiwan fab",
+    ScenarioType.PORT_STRIKE:     "Port of Long Beach (ILWU Strike)",
+    ScenarioType.CUSTOMS_DELAY:   "Shenzhen Customs — GACC Hold",
+    ScenarioType.SUPPLIER_BREACH: "Hsinchu Fab, Taiwan (ChipTech bankruptcy)",
 }
 
 
@@ -102,31 +102,31 @@ def _orchestrator_broadcast(sc) -> str:
 def _procurement_last_message(sc) -> str:
     """Scenario-specific final procurement execution message."""
     if sc.id == ScenarioType.PORT_STRIKE:
-        return "Dallas spot order cancelled · Hybrid 60/40 confirmed · Long Beach diversion logged"
+        return "Dallas spot buy cancelled (80% qty only) · Hybrid 60/40 air+sea confirmed · Long Beach diversion logged"
     elif sc.id == ScenarioType.CUSTOMS_DELAY:
-        return "Shenzhen alternate broker engaged · Backup LAX bonded warehouse reserved"
+        return "Shenzhen alternate broker engaged · Busan reroute confirmed · Samsung Dallas notified of ETA"
     else:  # SUPPLIER_BREACH
-        return "Taiwan order formally cancelled · TSMC secondary fab slot confirmed as backup"
+        return "ChipTech order formally cancelled · SK Hynix Suwon alt-source confirmed · NVIDIA spec certification in progress"
 
 
 def _logistics_exec_message(sc) -> str:
     """Scenario-specific logistics execution confirmation."""
     if sc.id == ScenarioType.PORT_STRIKE:
-        return "Hybrid route booked: 60% air via LAX + 40% sea via Oakland · ETA 36h · H20 backup: Tucson"
+        return "Hybrid route booked: 60% air via LAX + 40% sea via Oakland → Apple Cupertino · ETA 36h · Hour-20 Tucson backup armed"
     elif sc.id == ScenarioType.CUSTOMS_DELAY:
-        return "Air freight rerouted: Shenzhen → LAX via expedited customs broker · ETA 28h"
+        return "Air freight rerouted: Shenzhen → Busan → LAX via expedited customs broker · Ground to Samsung Dallas · ETA 28h"
     else:  # SUPPLIER_BREACH
-        return "TSMC secondary allocation confirmed: Hsinchu → Seattle · ETA 60h"
+        return "SK Hynix alt-source confirmed: Suwon → ICN → LAX → NVIDIA Santa Clara · ETA 22h · Spec cert running parallel"
 
 
 def _sales_exec_message(sc) -> str:
     """Scenario-specific sales notification message."""
     if sc.id == ScenarioType.PORT_STRIKE:
-        return f"{sc.customer} notified — 36h extension confirmed · Q3 priority allocation logged"
+        return f"{sc.customer} (Cupertino) notified — 36h extension confirmed · Q3 priority allocation logged · Zero penalty"
     elif sc.id == ScenarioType.CUSTOMS_DELAY:
-        return f"{sc.customer} notified — 28h delay acknowledged · Expedited clearance in progress"
+        return f"{sc.customer} (Dallas) notified — 28h revised ETA confirmed · Force majeure invoked · Penalty waived"
     else:  # SUPPLIER_BREACH
-        return f"{sc.customer} notified — 60h revised ETA confirmed · Secondary fab SLA issued"
+        return f"{sc.customer} (Santa Clara) notified — SK Hynix alt-source approved · Spec cert in 6h · SLA amendment issued"
 
 
 def _finance_exec_message(sc, cost_usd: int = 280_000) -> str:
@@ -226,9 +226,9 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 agent=AgentId.LOGISTICS,
                 tool="check_freight_rates",
                 result={
-                    "air_lax":    {"cost": 450_000, "hours": 24, "risk": "low"},
-                    "spot_dallas":{"cost": 380_000, "hours": 12, "risk": "medium"},
-                    "hybrid":     {"cost": 253_000, "hours": 36, "risk": "medium"},
+                    "air_lax":     {"cost": 450_000, "hours": 24, "risk": "low",    "route": "Shanghai → LAX (100% air freight)"},
+                    "sea_oakland": {"cost": 190_000, "hours": 72, "risk": "high",   "route": "Shanghai → Port of Oakland (sea, ILWU solidarity risk)"},
+                    "hybrid":      {"cost": 253_000, "hours": 36, "risk": "medium", "route": "60% air via LAX + 40% sea via Oakland"},
                 },
             ).model_dump(),
         },
@@ -252,8 +252,9 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 from_label="LOGISTICS", to_label="→ ORCH",
                 timestamp="00:12", css_class="al",
                 text=(
-                    "Option A: Air via LAX — $450K / 24h / Low risk.<br>"
-                    "Recalled March 2024 LA strike — hybrid saved $180K then."
+                    "Option A: 100% Air via LAX — $450K / 24h / Low risk.<br>"
+                    "Option B: 100% Sea via Oakland — $190K / 72h / High risk (ILWU solidarity action).<br>"
+                    "Recalled March 2024 LA strike — hybrid 60/40 saved $180K then. Recommending Option C."
                 ),
                 tools=["📦 check_freight_rates()", '📚 memory_recall("LA_2024")'],
             ).model_dump(),
@@ -266,12 +267,12 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
             ).model_dump(),
         },
 
-        # ── t=3000ms : Procurement spots Dallas option ────────────────────
+        # ── t=3000ms : Procurement checks Dallas domestic supplier ────────────────────
         {
             "delay_ms": 3000,
             "event": AgentStateEvent(
                 agent=AgentId.PROCUREMENT, status=AgentStatus.QUERYING,
-                tool='🏭 query_suppliers("dallas")', pulsing=True,
+                tool='🏭 query_suppliers("domestic_backup")', pulsing=True,
             ).model_dump(),
         },
         {
@@ -280,11 +281,13 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 agent=AgentId.PROCUREMENT,
                 tool="query_suppliers",
                 result={
-                    "location": "Dallas TX",
+                    "supplier": "Texas Semiconductor Warehouse",
+                    "location": "Dallas, TX (domestic backup)",
                     "cost": 380_000,
                     "quantity_pct": 80,
                     "cert_hours": 4,
                     "risk": "medium",
+                    "note": "80% of required qty in stock — cannot fulfill full order",
                 },
             ).model_dump(),
         },
@@ -295,10 +298,11 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 from_label="PROCUREMENT", to_label="→ ORCH",
                 timestamp="00:31", css_class="ap",
                 text=(
-                    "Option B: Spot buy Dallas — $380K / 12h / Med risk. "
-                    "Only 80% quantity available. Cert: 4h."
+                    "Option D: Domestic spot buy — Texas Semiconductor Warehouse, Dallas TX. "
+                    "$380K / 12h lead time / 80% qty only. "
+                    "Cannot fulfill full Apple order. Recommend routing solution instead."
                 ),
-                tools=['🏭 query_suppliers("dallas")'],
+                tools=['🏭 query_suppliers("domestic_backup")'],
             ).model_dump(),
         },
 
@@ -440,19 +444,19 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 message=(
                     {
                         ScenarioType.PORT_STRIKE: (
-                            "LAX ground crew unconfirmed during active strike. "
-                            "Single point of failure in Hybrid plan. "
-                            "Recommend Hour-20 backup trigger to Tucson air route."
+                            "LAX ground crew availability unconfirmed during active ILWU strike. "
+                            "Single point of failure if 60% air leg is grounded. "
+                            "Recommend Hour-20 backup trigger to Tucson Air Hub as alternate."
                         ),
                         ScenarioType.CUSTOMS_DELAY: (
                             "LAX bonded warehouse capacity unconfirmed during peak clearance window. "
-                            "Risk of 12h holding delay on arrival. "
-                            "Recommend pre-booking alternate bonded facility at Ontario CA."
+                            "Risk of 12h holding delay on arrival even after Busan reroute. "
+                            "Recommend pre-booking alternate bonded facility at Ontario, CA."
                         ),
                         ScenarioType.SUPPLIER_BREACH: (
-                            "Seattle port receiving capacity unconfirmed for oversized fab equipment. "
-                            "Single point of failure in TSMC Hsinchu → Seattle routing. "
-                            "Recommend Hour-40 backup trigger to Los Angeles air freight."
+                            "SK Hynix NVIDIA spec certification timeline unconfirmed — 6h estimate may slip. "
+                            "Single point of failure on Suwon → LAX route if cert fails. "
+                            "Recommend parallel cert of Micron Japan (Hiroshima) as backup source."
                         ),
                     }[scenario]
                 ),
@@ -467,19 +471,19 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 text=(
                     {
                         ScenarioType.PORT_STRIKE: (
-                            "⚠ Consensus challenge: LAX ground crew unconfirmed. "
-                            "Single point of failure. Recommend Hour-20 backup trigger "
-                            "to Tucson route."
+                            "⚠ Consensus challenge: LAX ground crew unconfirmed during strike. "
+                            "Single point of failure on air leg. Recommend Hour-20 backup trigger "
+                            "to Tucson Air Hub."
                         ),
                         ScenarioType.CUSTOMS_DELAY: (
-                            "⚠ Consensus challenge: LAX bonded warehouse capacity unconfirmed. "
-                            "Risk of 12h holding delay. Recommend backup bonded facility "
-                            "at Ontario CA."
+                            "⚠ Consensus challenge: LAX bonded warehouse at peak capacity. "
+                            "12h holding risk on arrival. Recommend pre-booking backup bonded "
+                            "facility at Ontario, CA."
                         ),
                         ScenarioType.SUPPLIER_BREACH: (
-                            "⚠ Consensus challenge: Seattle port receiving capacity unconfirmed. "
-                            "Single point of failure on Hsinchu → Seattle route. Recommend "
-                            "Hour-40 backup trigger to LA air freight."
+                            "⚠ Consensus challenge: SK Hynix cert timeline unconfirmed — 6h may slip. "
+                            "Recommend parallel certification of Micron Japan (Hiroshima) "
+                            "as backup source for NVIDIA spec."
                         ),
                     }[scenario]
                 ),
@@ -508,9 +512,20 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 from_label="FINANCE", to_label="→ ALL",
                 timestamp="04:01", css_class="af",
                 text=(
-                    "Risk acknowledged. Adding +$20K contingency for Tucson backup. "
-                    "Final recommendation: Hybrid $280K + $20K reserve. 94% CI. "
-                    "Proposing approval."
+                    {
+                        ScenarioType.PORT_STRIKE: (
+                            "Risk acknowledged. Adding +$20K contingency for Tucson backup trigger. "
+                            "Final: Hybrid $280K + $20K reserve · 36h delivery · 94% CI. Proposing approval."
+                        ),
+                        ScenarioType.CUSTOMS_DELAY: (
+                            "Risk acknowledged. Adding +$15K contingency for Ontario CA bonded warehouse backup. "
+                            "Final: Busan reroute $180K + $15K reserve · 28h delivery · 91% CI. Proposing approval."
+                        ),
+                        ScenarioType.SUPPLIER_BREACH: (
+                            "Risk acknowledged. Adding +$40K contingency for Micron Japan parallel cert. "
+                            "Final: SK Hynix alt-source $510K + $40K reserve · 22h delivery · 89% CI. Proposing approval."
+                        ),
+                    }[scenario]
                 ),
                 tools=["✅ propose_consensus()"],
             ).model_dump(),
@@ -534,14 +549,36 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
         },
         {
             "delay_ms": 16100,
-            "event": ApprovalRequiredEvent(
-                option="hybrid",
-                label="Hybrid Route — 60% Air / 40% Sea",
-                cost_usd=280_000,
-                reserve_usd=20_000,
-                delivery_hours=36,
-                confidence=0.94,
-                detail="$280K + $20K reserve · 36h delivery · Backup trigger H20 · Apple: ✓ · Confidence: 94%",
+            "event": (
+                {
+                    ScenarioType.PORT_STRIKE: ApprovalRequiredEvent(
+                        option="hybrid",
+                        label="Hybrid Route — 60% Air LAX + 40% Sea Oakland",
+                        cost_usd=280_000,
+                        reserve_usd=20_000,
+                        delivery_hours=36,
+                        confidence=0.94,
+                        detail="$280K + $20K reserve · 36h · Hour-20 Tucson backup · Apple Cupertino: ✓ · CI: 94%",
+                    ),
+                    ScenarioType.CUSTOMS_DELAY: ApprovalRequiredEvent(
+                        option="air_busan",
+                        label="Air Reroute — Shenzhen → Busan → LAX → Samsung Dallas",
+                        cost_usd=180_000,
+                        reserve_usd=15_000,
+                        delivery_hours=28,
+                        confidence=0.91,
+                        detail="$180K + $15K reserve · 28h · Ontario CA bonded backup · Samsung Dallas: ✓ · CI: 91%",
+                    ),
+                    ScenarioType.SUPPLIER_BREACH: ApprovalRequiredEvent(
+                        option="alt_supplier",
+                        label="Alt-Source — SK Hynix Suwon → LAX → NVIDIA Santa Clara",
+                        cost_usd=510_000,
+                        reserve_usd=40_000,
+                        delivery_hours=22,
+                        confidence=0.89,
+                        detail="$510K + $40K reserve · 22h · Micron Japan parallel cert · NVIDIA Santa Clara: ✓ · CI: 89%",
+                    ),
+                }[scenario]
             ).model_dump(),
         },
         {
@@ -564,6 +601,11 @@ def get_execution_steps(scenario: ScenarioType = ScenarioType.PORT_STRIKE) -> li
     Scenario-specific messages are derived from the passed scenario.
     """
     sc = SCENARIO_DEFINITIONS[scenario]
+    _exec_route = {
+        ScenarioType.PORT_STRIKE:     "✈ Hybrid booked · LAX + Oakland → Apple Cupertino",
+        ScenarioType.CUSTOMS_DELAY:   "✈ Air rerouted · Busan → LAX → Samsung Dallas",
+        ScenarioType.SUPPLIER_BREACH: "✈ SK Hynix confirmed · Suwon → LAX → NVIDIA Santa Clara",
+    }[scenario]
     return [
         {
             "delay_ms": 0,
@@ -577,7 +619,7 @@ def get_execution_steps(scenario: ScenarioType = ScenarioType.PORT_STRIKE) -> li
             "delay_ms": 100,
             "event": MapUpdateEvent(
                 status="EXECUTING", status_color="#00e676",
-                route="✈ Freight booked → Austin TX",
+                route=_exec_route,
             ).model_dump(),
         },
         {

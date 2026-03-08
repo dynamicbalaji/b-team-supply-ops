@@ -2,63 +2,88 @@ import { useEffect, useRef } from 'react'
 
 // ─── Nodes ────────────────────────────────────────────────────────────────────
 const NODES = {
-  shanghai:    { lat: 31.23,  lng: 121.47,  label: 'Shanghai Port',   icon: '📦', color: '#7aa0be' },
-  longbeach:   { lat: 33.75,  lng: -118.19, label: 'Long Beach Port', icon: '🔴', color: '#ff3b5c' },
-  lax:         { lat: 33.94,  lng: -118.41, label: 'LAX Airport',     icon: '✈',  color: '#00d4ff' },
-  dallas:      { lat: 32.78,  lng: -96.80,  label: 'Dallas Hub',      icon: '🏢', color: '#ffb340' },
-  austin:      { lat: 30.27,  lng: -97.74,  label: 'Austin TX',       icon: '🏭', color: '#00e676' },
-  guangzhou:   { lat: 23.12,  lng: 113.25,  label: 'Guangzhou Port',  icon: '📦', color: '#7aa0be' },
-  customs_hkg: { lat: 22.30,  lng: 114.17,  label: 'HK Customs ⚠',   icon: '🔴', color: '#ff3b5c' },
-  chicago:     { lat: 41.88,  lng: -87.63,  label: 'Chicago Plant',   icon: '🏭', color: '#00e676' },
-  taipei:      { lat: 25.03,  lng: 121.56,  label: 'Taipei Fab',      icon: '🔴', color: '#ff3b5c' },
-  seoul:       { lat: 37.56,  lng: 126.98,  label: 'Seoul Backup',    icon: '🏭', color: '#00e676' },
-  portland:    { lat: 45.52,  lng: -122.68, label: 'Portland Fab',    icon: '🏢', color: '#ffb340' },
-  client_nyc:  { lat: 40.71,  lng: -74.01,  label: 'NY Client',       icon: '🏢', color: '#7aa0be' },
+  // Scenario 1 — Port Strike (Long Beach)
+  shanghai:    { lat: 31.23,  lng: 121.47,  label: 'Shanghai Port',      icon: '📦', color: '#7aa0be' },
+  longbeach:   { lat: 33.75,  lng: -118.19, label: 'Long Beach Port',    icon: '🔴', color: '#ff3b5c' },
+  lax:         { lat: 33.94,  lng: -118.41, label: 'LAX Airport',        icon: '✈',  color: '#00d4ff' },
+  oakland:     { lat: 37.80,  lng: -122.27, label: 'Port of Oakland',    icon: '⚓', color: '#ffb340' },
+  cupertino:   { lat: 37.33,  lng: -122.03, label: 'Apple — Cupertino',  icon: '🏭', color: '#00e676' },
+  tucson:      { lat: 32.25,  lng: -110.93, label: 'Tucson Air Hub',     icon: '🏢', color: '#ffb340' },
+
+  // Scenario 2 — Customs Delay (Shenzhen → LAX)
+  shenzhen:    { lat: 22.54,  lng: 114.06,  label: 'Shenzhen Airport',   icon: '📦', color: '#7aa0be' },
+  customs_sz:  { lat: 22.54,  lng: 114.06,  label: 'Shenzhen Customs ⚠', icon: '🔴', color: '#ff3b5c' },
+  busan:       { lat: 35.10,  lng: 129.04,  label: 'Busan Port (alt)',   icon: '⚓', color: '#00d4ff' },
+  dallas_smsg: { lat: 32.78,  lng: -96.80,  label: 'Samsung — Dallas',   icon: '🏭', color: '#00e676' },
+
+  // Scenario 3 — Supplier Breach (Taiwan → NVIDIA)
+  hsinchu:     { lat: 24.80,  lng: 120.97,  label: 'Hsinchu Fab (bankrupt)', icon: '🔴', color: '#ff3b5c' },
+  suwon:       { lat: 37.26,  lng: 127.00,  label: 'SK Hynix — Suwon',  icon: '🏭', color: '#00d4ff' },
+  lax_nvidia:  { lat: 33.94,  lng: -118.41, label: 'LAX — Freight',     icon: '✈',  color: '#ffb340' },
+  santa_clara: { lat: 37.38,  lng: -121.97, label: 'NVIDIA — Santa Clara', icon: '🏭', color: '#00e676' },
 }
 
 // ─── Scenarios ────────────────────────────────────────────────────────────────
 const SCENARIOS = {
+  // Scenario 1: $12M semiconductors blocked at Long Beach (ILWU strike)
+  // Primary route: Shanghai → Long Beach [BLOCKED]
+  // Active reroute: Shanghai → LAX (air, 60%) + Shanghai → Oakland (sea, 40%)
+  // Destination: Apple HQ, Cupertino CA
+  // Backup: Tucson Air Hub (Hour-20 trigger)
   port_strike: {
-    bounds: [[8, 105], [58, -60]],
-    activeNodes: ['shanghai', 'longbeach', 'lax', 'dallas', 'austin'],
+    bounds: [[18, 100], [52, -135]],
+    activeNodes: ['shanghai', 'longbeach', 'lax', 'oakland', 'cupertino', 'tucson'],
     blockedNode: 'longbeach',
     blockedLabel: '⚠ ILWU STRIKE · PORT BLOCKED',
-    badgeOffset: [1.2, 1.5],
+    badgeOffset: [1.5, 1.0],
     routes: [
       { path: ['shanghai', 'longbeach'], state: 'blocked',  arc: true  },
-      { path: ['lax', 'austin'],         state: 'active',   arc: false },
-      { path: ['longbeach', 'dallas', 'austin'], state: 'proposed', arc: false },
+      { path: ['shanghai', 'lax'],       state: 'active',   arc: true  },  // 60% air reroute
+      { path: ['shanghai', 'oakland'],   state: 'proposed', arc: true  },  // 40% sea via Oakland
+      { path: ['lax', 'cupertino'],      state: 'active',   arc: false },  // ground to Apple
+      { path: ['oakland', 'cupertino'],  state: 'proposed', arc: false },  // ground from Oakland
     ],
-    vehicleOcean:  ['shanghai', 'longbeach'],
-    vehicleGround: ['lax', 'dallas', 'austin'],
+    vehicleOcean:  ['shanghai', 'lax'],
+    vehicleGround: ['lax', 'cupertino'],
   },
+
+  // Scenario 2: $8M components held at Shenzhen Customs
+  // Primary route: Shenzhen → LAX [BLOCKED by customs]
+  // Active reroute: Shenzhen → (air, expedited broker) → LAX
+  // Backup: Reroute via Busan to bypass Shenzhen hold
+  // Destination: Samsung US — Dallas/Plano TX (Samsung America HQ)
   customs_delay: {
-    bounds: [[5, 95], [55, -65]],
-    activeNodes: ['guangzhou', 'customs_hkg', 'lax', 'chicago'],
-    blockedNode: 'customs_hkg',
-    blockedLabel: '⚠ CUSTOMS HOLD · 72h DELAY',
-    badgeOffset: [1.2, -1.5],
+    bounds: [[15, 95], [55, -110]],
+    activeNodes: ['shenzhen', 'customs_sz', 'busan', 'lax', 'dallas_smsg'],
+    blockedNode: 'customs_sz',
+    blockedLabel: '⚠ CUSTOMS HOLD · SHENZHEN',
+    badgeOffset: [1.5, -2.0],
     routes: [
-      { path: ['guangzhou', 'customs_hkg'], state: 'blocked',  arc: false },
-      { path: ['customs_hkg', 'lax'],       state: 'active',   arc: true  },
-      { path: ['lax', 'chicago'],           state: 'active',   arc: false },
+      { path: ['shenzhen', 'lax'],      state: 'blocked',  arc: true  },  // original route blocked
+      { path: ['shenzhen', 'busan'],    state: 'proposed', arc: false },  // alternate: truck to Busan
+      { path: ['busan', 'lax'],         state: 'active',   arc: true  },  // air freight from Busan
+      { path: ['lax', 'dallas_smsg'],   state: 'active',   arc: false },  // ground to Samsung Dallas
     ],
-    vehicleOcean:  ['customs_hkg', 'lax'],
-    vehicleGround: ['lax', 'chicago'],
+    vehicleOcean:  ['busan', 'lax'],
+    vehicleGround: ['lax', 'dallas_smsg'],
   },
+
+  // Scenario 3: $20M Taiwan fab order cancelled (supplier bankruptcy)
+  // Primary route: Hsinchu Fab → LAX → NVIDIA Santa Clara [CANCELLED]
+  // Reroute: SK Hynix Suwon (Korea) → LAX → NVIDIA Santa Clara
   supplier_breach: {
-    bounds: [[10, 100], [60, -60]],
-    activeNodes: ['taipei', 'seoul', 'portland', 'client_nyc'],
-    blockedNode: 'taipei',
-    blockedLabel: '⚠ SUPPLIER BANKRUPT · CANCELLED',
-    badgeOffset: [1.2, -1.5],
+    bounds: [[20, 100], [50, -130]],
+    activeNodes: ['hsinchu', 'suwon', 'lax_nvidia', 'santa_clara'],
+    blockedNode: 'hsinchu',
+    blockedLabel: '⚠ CHIPTECH BANKRUPT · ORDER CANCELLED',
+    badgeOffset: [1.5, -2.0],
     routes: [
-      { path: ['taipei', 'client_nyc'],  state: 'blocked',  arc: true  },
-      { path: ['seoul', 'portland'],      state: 'proposed', arc: true  },
-      { path: ['portland', 'client_nyc'], state: 'proposed', arc: false },
+      { path: ['hsinchu', 'lax_nvidia'],   state: 'blocked',  arc: true  },  // original route dead
+      { path: ['suwon', 'lax_nvidia'],     state: 'active',   arc: true  },  // alt: Korea → LAX air
+      { path: ['lax_nvidia', 'santa_clara'], state: 'active', arc: false },  // ground to NVIDIA
     ],
-    vehicleOcean:  ['seoul', 'portland'],
-    vehicleGround: ['portland', 'client_nyc'],
+    vehicleOcean:  ['suwon', 'lax_nvidia'],
+    vehicleGround: ['lax_nvidia', 'santa_clara'],
   },
 }
 
@@ -578,7 +603,7 @@ export function useLeafletMap(containerRef, { scenario, truckPhase, onTruckPhase
       const n = NODES[key]
       const isBlocked = key === cfg.blockedNode
       const activityLevel = isBlocked ? 'blocked' : 
-        (key === 'shanghai' || key === 'lax') ? 'high' : 'normal'
+        (key === 'shanghai' || key === 'shenzhen' || key === 'lax' || key === 'lax_nvidia' || key === 'busan') ? 'high' : 'normal'
       
       Lf.marker([n.lat, n.lng], {
         icon: Lf.divIcon({
