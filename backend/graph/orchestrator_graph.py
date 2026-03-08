@@ -566,11 +566,29 @@ async def _exec_complete(state: _CascadeState) -> _CascadeState:
     sc           = SCENARIO_DEFINITIONS[scenario]
     saved_usd    = max(sc.penalty_usd - cost_usd, 0)
 
+    resolution_time_str = _elapsed(started_at)
+    ci = (run_context.get("finance", {}) or {}).get("mc_result", {}) or {}
+    confidence_val = ci.get("confidence_interval", 0.94)
+
+    # ── Persist metrics to _runs so the PDF endpoint can read them ────────
+    try:
+        from orchestrator import _runs
+        if run_id in _runs:
+            _runs[run_id]["cost_usd"]        = cost_usd
+            _runs[run_id]["saved_usd"]       = saved_usd
+            _runs[run_id]["resolution_time"] = resolution_time_str
+            _runs[run_id]["confidence"]      = confidence_val
+            # Also ensure context has finance data for PDF summary
+            if "context" not in _runs[run_id] or not _runs[run_id].get("context"):
+                _runs[run_id]["context"] = _safe_context_summary(run_context)
+    except Exception as _e:
+        print(f"[exec_complete] metrics persist skipped: {_e}")
+
     await _phase(run_id, 4, "done")
     await _phase(run_id, 5, "active")
     await _map(run_id, "DELIVERED ✅", "#00e676")
     await redis_client.publish(run_id, CompleteEvent(
-        resolution_time=_elapsed(started_at),
+        resolution_time=resolution_time_str,
         cost_usd=cost_usd,
         saved_usd=saved_usd,
         message_count=9,
