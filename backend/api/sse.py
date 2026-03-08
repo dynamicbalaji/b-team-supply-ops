@@ -28,7 +28,7 @@ import asyncio
 import json
 from fastapi import Request
 from fastapi.responses import StreamingResponse
-import redis_client
+import db.redis_client as redis_client
 
 
 POLL_INTERVAL   = 0.05   # 50 ms — snappy without hammering Redis

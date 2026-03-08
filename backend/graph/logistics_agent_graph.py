@@ -25,8 +25,8 @@ from typing import Any, Dict
 
 from langgraph.graph import StateGraph, END
 
-from models import AgentId, AgentStatus, ScenarioType
-from scenarios import SCENARIO_DEFINITIONS
+from core.models import AgentId, AgentStatus, ScenarioType
+from core.scenarios import SCENARIO_DEFINITIONS
 from tools.freight import check_freight_rates, memory_recall, recalculate_route
 from agents.base import (
     publish_state,

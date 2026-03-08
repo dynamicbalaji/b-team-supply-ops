@@ -7,7 +7,7 @@ Public API (run, revise) is preserved so orchestrator_graph.py and any
 other callers require zero modification.
 """
 
-from models import AgentId, AgentStatus
+from core.models import AgentId, AgentStatus
 from graph.logistics_agent_graph import run_logistics_agent, revise_logistics_agent
 
 

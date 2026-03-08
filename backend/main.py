@@ -28,18 +28,18 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-import redis_client
-import orchestrator
-from config import get_settings
-from models import (
+import db.redis_client as redis_client
+import api.orchestrator as orchestrator
+from core.config import get_settings
+from core.models import (
     CreateRunRequest, ApproveRunRequest,
     RunResponse, RunStatus, HealthResponse,
     ScenarioType,
     A2ATaskRequest, A2ATaskResult,
 )
-from scenarios import SCENARIO_DEFINITIONS
-from sse import stream_run
-from routes_decision_audit import router as decision_audit_router
+from core.scenarios import SCENARIO_DEFINITIONS
+from api.sse import stream_run
+from api.routes_decision_audit import router as decision_audit_router
 
 settings = get_settings()
 
@@ -94,7 +94,7 @@ asyncio.get_event_loop().set_exception_handler(_handle_exception)
 async def lifespan(app: FastAPI):
     log.info("🚀 ResolveIQ backend starting...")
     from agents.base import active_model_chain
-    import turso_client
+    import db.turso_client as turso_client
     chain    = active_model_chain()
     redis_ok = await redis_client.health_check()
     
@@ -170,7 +170,7 @@ async def health():
     model_chain: the ordered list of models that will be tried on each agent call.
     agent_mode: "live" (real Gemini) or "hardcoded" (Phase 1 fallback).
     """
-    import turso_client
+    import db.turso_client as turso_client
     from agents.base import active_model_chain
     redis_ok  = await redis_client.health_check()
     turso_ok  = await turso_client.health_check()
@@ -253,11 +253,11 @@ async def run_history(limit: int = 20):
     Falls back to the in-memory _runs dict when TursoDB is not configured.
     Useful for the judge panel showing "X crises resolved today".
     """
-    import turso_client
+    import db.turso_client as turso_client
     if turso_client.is_configured():
         return {"runs": await turso_client.list_recent_runs(limit)}
     # In-memory fallback
-    from orchestrator import _runs
+    from api.orchestrator import _runs
     recent = sorted(_runs.values(), key=lambda r: r.get("run_id", ""), reverse=True)[:limit]
     return {"runs": [{"run_id": r["run_id"], "scenario": r.get("scenario",""),
                       "status": r.get("status",""), "mode": r.get("mode","")} for r in recent]}

@@ -33,12 +33,12 @@ import time
 import logging
 import sys
 
-import redis_client
-from models import (
+import db.redis_client as redis_client
+from core.models import (
     AgentId, AgentStatus,
     AgentStateEvent, MessageEvent, TokenEvent, ToolEvent,
 )
-from config import get_settings
+from core.config import get_settings
 
 _logger = logging.getLogger("resolveiq.agents")
 
@@ -440,7 +440,7 @@ async def publish_tool_result(
     Agents should call this instead of publish_tool() directly.
     """
     from tools.registry import format_tool_result
-    from models import ToolResultEvent
+    from core.models import ToolResultEvent
 
     # 1. Legacy event — keeps tp-log / tp-fin pill updating
     await redis_client.publish(run_id, {

@@ -21,7 +21,7 @@ EXAMPLE CALL SITES
 ──────────────────
 In graph/logistics_agent_graph.py, after the agent produces its route options:
 
-    from audit_helpers import publish_audit_event
+    from audit.audit_helpers import publish_audit_event
 
     await publish_audit_event(
         run_id      = run_id,
@@ -63,8 +63,8 @@ import logging
 import math
 import time as _time
 
-import redis_client
-import orchestrator
+import db.redis_client as redis_client
+import api.orchestrator as orchestrator
 
 log = logging.getLogger("resolveiq.audit")
 

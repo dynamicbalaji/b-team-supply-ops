@@ -14,7 +14,7 @@ LAX cost assumption.
 import random
 import asyncio
 import math
-from models import ScenarioType
+from core.models import ScenarioType
 
 
 # ── Customs rate catalog ─────────────────────────────────────────────────

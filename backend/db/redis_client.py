@@ -18,7 +18,7 @@ This is reliable, debuggable, and works on Upstash free tier.
 import json
 import asyncio
 import httpx
-from config import get_settings
+from core.config import get_settings
 
 settings = get_settings()
 

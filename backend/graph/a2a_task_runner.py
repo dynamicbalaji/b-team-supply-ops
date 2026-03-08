@@ -61,8 +61,8 @@ import uuid
 import logging
 from typing import Any
 
-from models import ScenarioType, AgentId
-from scenarios import SCENARIO_DEFINITIONS
+from core.models import ScenarioType, AgentId
+from core.scenarios import SCENARIO_DEFINITIONS
 
 log = logging.getLogger("resolveiq.a2a_task_runner")
 

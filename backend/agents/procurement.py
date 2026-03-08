@@ -10,7 +10,7 @@ The public API (run, acknowledge) is preserved unchanged so
 orchestrator_graph.py and any other callers require zero modification.
 """
 
-from models import AgentId, AgentStatus
+from core.models import AgentId, AgentStatus
 from agents.base import publish_state
 from graph.procurement_agent_graph import run_procurement_agent
 

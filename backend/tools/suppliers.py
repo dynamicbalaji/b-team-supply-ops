@@ -9,7 +9,7 @@ Phase 3 replaces with real TursoDB queries.
 
 import asyncio
 import random
-from models import ScenarioType
+from core.models import ScenarioType
 
 
 # ── Supplier catalog ─────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ async def query_suppliers(
 
     # ── Phase 3: TursoDB ──────────────────────────────────────────────────
     try:
-        import turso_client
+        import db.turso_client as turso_client
         if turso_client.is_configured():
             db_result = await turso_client.query_suppliers(scenario.value)
             if db_result:
@@ -199,7 +199,7 @@ async def query_contract_terms(scenario: ScenarioType) -> dict:
 
     # ── Phase 3: TursoDB ──────────────────────────────────────────────────
     try:
-        import turso_client
+        import db.turso_client as turso_client
         if turso_client.is_configured():
             result = await turso_client.query_contract(scenario.value)
             if result:

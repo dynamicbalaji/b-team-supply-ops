@@ -17,8 +17,8 @@ from typing import Any, Dict
 
 from langgraph.graph import StateGraph, END
 
-from models import AgentId, AgentStatus, ScenarioType
-from scenarios import SCENARIO_DEFINITIONS
+from core.models import AgentId, AgentStatus, ScenarioType
+from core.scenarios import SCENARIO_DEFINITIONS
 from tools.suppliers import query_contract_terms, draft_sla_amendment
 from agents.base import (
     publish_state,
