@@ -66,7 +66,7 @@ import time as _time
 import db.redis_client as redis_client
 import api.orchestrator as orchestrator
 
-log = logging.getLogger("resolveiq.audit")
+log = logging.getLogger("chainguardai.audit")
 
 
 def _elapsed_label(started_at: float) -> str:

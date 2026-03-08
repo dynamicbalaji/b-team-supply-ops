@@ -9,8 +9,8 @@ over its REST interface, so we implement lightweight pub/sub using:
   - SUBSCRIBE → polling a Redis LIST used as a queue per run_id
 
 Pattern:
-  Publisher  → LPUSH  resolveiq:run:{run_id}:queue  <json>
-  Subscriber → BRPOP  resolveiq:run:{run_id}:queue  (with timeout)
+  Publisher  → LPUSH  chainguardai:run:{run_id}:queue  <json>
+  Subscriber → BRPOP  chainguardai:run:{run_id}:queue  (with timeout)
 
 This is reliable, debuggable, and works on Upstash free tier.
 """
@@ -49,7 +49,7 @@ async def _cmd(*args) -> dict:
 
 # ── Queue-based pub/sub ──────────────────────────────────────────────────
 
-QUEUE_KEY = "resolveiq:run:{run_id}:queue"
+QUEUE_KEY = "chainguardai:run:{run_id}:queue"
 TTL_SECONDS = 3600  # queues expire after 1 hour
 
 
@@ -79,14 +79,14 @@ async def pop_event(run_id: str, timeout: int = 5) -> dict | None:
 
 async def set_run_state(run_id: str, state: dict) -> None:
     """Persist full run state as a Redis hash (for reconnects)."""
-    key = f"resolveiq:run:{run_id}:state"
+    key = f"chainguardai:run:{run_id}:state"
     await _cmd("SET", key, json.dumps(state))
     await _cmd("EXPIRE", key, TTL_SECONDS)
 
 
 async def get_run_state(run_id: str) -> dict | None:
     """Retrieve run state."""
-    key = f"resolveiq:run:{run_id}:state"
+    key = f"chainguardai:run:{run_id}:state"
     result = await _cmd("GET", key)
     raw = result.get("result")
     if raw:
@@ -97,7 +97,7 @@ async def get_run_state(run_id: str) -> dict | None:
 async def delete_queue(run_id: str) -> None:
     """Clean up after a run completes."""
     await _cmd("DEL", QUEUE_KEY.format(run_id=run_id))
-    await _cmd("DEL", f"resolveiq:run:{run_id}:state")
+    await _cmd("DEL", f"chainguardai:run:{run_id}:state")
 
 
 async def health_check() -> bool:

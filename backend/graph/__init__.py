@@ -2,7 +2,7 @@
 backend/graph
 ─────────────
 
-LangGraph-based graphs for the ResolveIQ backend.
+LangGraph-based graphs for the ChainGuardAI backend.
 
 This package will progressively become the single source of truth for
 multi-agent orchestration and agent behaviour. Existing FastAPI routes
