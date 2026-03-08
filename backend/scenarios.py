@@ -102,7 +102,7 @@ def _orchestrator_broadcast(sc) -> str:
 def _procurement_last_message(sc) -> str:
     """Scenario-specific final procurement execution message."""
     if sc.id == ScenarioType.PORT_STRIKE:
-        return _procurement_last_message(sc)
+        return "Dallas spot order cancelled · Hybrid 60/40 confirmed · Long Beach diversion logged"
     elif sc.id == ScenarioType.CUSTOMS_DELAY:
         return "Shenzhen alternate broker engaged · Backup LAX bonded warehouse reserved"
     else:  # SUPPLIER_BREACH
@@ -112,7 +112,7 @@ def _procurement_last_message(sc) -> str:
 def _logistics_exec_message(sc) -> str:
     """Scenario-specific logistics execution confirmation."""
     if sc.id == ScenarioType.PORT_STRIKE:
-        return _logistics_exec_message(sc)
+        return "Hybrid route booked: 60% air via LAX + 40% sea via Oakland · ETA 36h · H20 backup: Tucson"
     elif sc.id == ScenarioType.CUSTOMS_DELAY:
         return "Air freight rerouted: Shenzhen → LAX via expedited customs broker · ETA 28h"
     else:  # SUPPLIER_BREACH
@@ -438,9 +438,23 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
             "delay_ms": 12500,
             "event": RiskActivatedEvent(
                 message=(
-                    "LAX ground crew unconfirmed during active strike. "
-                    "Single point of failure in Hybrid plan. "
-                    "Recommend Hour-20 backup trigger to Tucson air route."
+                    {
+                        ScenarioType.PORT_STRIKE: (
+                            "LAX ground crew unconfirmed during active strike. "
+                            "Single point of failure in Hybrid plan. "
+                            "Recommend Hour-20 backup trigger to Tucson air route."
+                        ),
+                        ScenarioType.CUSTOMS_DELAY: (
+                            "LAX bonded warehouse capacity unconfirmed during peak clearance window. "
+                            "Risk of 12h holding delay on arrival. "
+                            "Recommend pre-booking alternate bonded facility at Ontario CA."
+                        ),
+                        ScenarioType.SUPPLIER_BREACH: (
+                            "Seattle port receiving capacity unconfirmed for oversized fab equipment. "
+                            "Single point of failure in TSMC Hsinchu → Seattle routing. "
+                            "Recommend Hour-40 backup trigger to Los Angeles air freight."
+                        ),
+                    }[scenario]
                 ),
             ).model_dump(),
         },
@@ -451,9 +465,23 @@ def get_hardcoded_steps(scenario: ScenarioType) -> list[dict]:
                 from_label="RISK AGENT", to_label="→ ALL ⚠",
                 timestamp="03:45", css_class="ar",
                 text=(
-                    "⚠ Consensus challenge: LAX ground crew unconfirmed. "
-                    "Single point of failure. Recommend Hour-20 backup trigger "
-                    "to Tucson route."
+                    {
+                        ScenarioType.PORT_STRIKE: (
+                            "⚠ Consensus challenge: LAX ground crew unconfirmed. "
+                            "Single point of failure. Recommend Hour-20 backup trigger "
+                            "to Tucson route."
+                        ),
+                        ScenarioType.CUSTOMS_DELAY: (
+                            "⚠ Consensus challenge: LAX bonded warehouse capacity unconfirmed. "
+                            "Risk of 12h holding delay. Recommend backup bonded facility "
+                            "at Ontario CA."
+                        ),
+                        ScenarioType.SUPPLIER_BREACH: (
+                            "⚠ Consensus challenge: Seattle port receiving capacity unconfirmed. "
+                            "Single point of failure on Hsinchu → Seattle route. Recommend "
+                            "Hour-40 backup trigger to LA air freight."
+                        ),
+                    }[scenario]
                 ),
                 tools=[],
             ).model_dump(),

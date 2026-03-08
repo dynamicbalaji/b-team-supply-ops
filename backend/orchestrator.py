@@ -176,16 +176,23 @@ def set_run_status(run_id: str, status: RunStatus) -> None:
     """
     Update run status in the in-memory registry and shadow-write to TursoDB.
 
+    When status is APPROVED, also flips the approved flag in both the
+    in-memory dict and the TursoDB runs.approved column.
+
     Args:
         run_id: Run identifier.
         status: New RunStatus.
     """
     if run_id in _runs:
         _runs[run_id]["status"] = status
+        if status == RunStatus.APPROVED:
+            _runs[run_id]["approved"] = True
     try:
         import turso_client
         if turso_client.is_configured():
             _fire_and_forget(turso_client.update_run_status(run_id, status.value))
+            if status == RunStatus.APPROVED:
+                _fire_and_forget(turso_client.set_run_approved(run_id))
     except Exception:
         pass
 
