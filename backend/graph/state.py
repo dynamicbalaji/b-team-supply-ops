@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, TypedDict
 
-from models import RunStatus, ScenarioType
+from core.models import RunStatus, ScenarioType
 
 
 class RunGraphState(TypedDict, total=False):

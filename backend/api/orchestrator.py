@@ -86,10 +86,10 @@ In-memory dict remains the authoritative source of truth.
 import asyncio
 import time as _time
 
-import redis_client
-from config import get_settings
-from models import ScenarioType, RunStatus
-from scenarios import get_hardcoded_steps, get_execution_steps
+import db.redis_client as redis_client
+from core.config import get_settings
+from core.models import ScenarioType, RunStatus
+from core.scenarios import get_hardcoded_steps, get_execution_steps
 
 settings = get_settings()
 
@@ -164,7 +164,7 @@ def create_run(run_id: str, scenario: ScenarioType) -> dict:
     }
     _runs[run_id] = run
     try:
-        import turso_client
+        import db.turso_client as turso_client
         if turso_client.is_configured():
             _fire_and_forget(turso_client.create_run(run_id, scenario.value, mode))
     except Exception:
@@ -188,7 +188,7 @@ def set_run_status(run_id: str, status: RunStatus) -> None:
         if status == RunStatus.APPROVED:
             _runs[run_id]["approved"] = True
     try:
-        import turso_client
+        import db.turso_client as turso_client
         if turso_client.is_configured():
             _fire_and_forget(turso_client.update_run_status(run_id, status.value))
             if status == RunStatus.APPROVED:
@@ -308,7 +308,7 @@ async def run_execution_cascade(run_id: str, scenario: ScenarioType | None = Non
         await run_hardcoded_cascade(run_id, run_scenario)
         # Persist hardcoded metrics so PDF endpoint can read them
         try:
-            from scenarios import SCENARIO_DEFINITIONS
+            from core.scenarios import SCENARIO_DEFINITIONS
             sc_def = SCENARIO_DEFINITIONS.get(run_scenario)
             cost   = 280_000
             saved  = max(sc_def.penalty_usd - cost, 0) if sc_def else 1_720_000
@@ -346,12 +346,12 @@ async def run_rejection_cascade(run_id: str, rejection_notes: str = "") -> None:
     scenario    = run.get("scenario", ScenarioType.PORT_STRIKE)
     started_at  = run.get("started_at", _t.time()) or _t.time()
 
-    from models import (
+    from core.models import (
         AgentId, AgentStatus, MessageEvent, AgentStateEvent,
         ApprovalRequiredEvent, MapUpdateEvent,
     )
     from agents.base import elapsed, publish_state
-    from audit_helpers import publish_audit_event
+    from audit.audit_helpers import publish_audit_event
 
     async def _msg(agent, from_l, to_l, css, text):
         s = int(_t.time() - started_at)

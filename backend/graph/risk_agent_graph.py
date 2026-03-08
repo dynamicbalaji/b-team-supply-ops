@@ -22,9 +22,9 @@ from typing import Any, Dict
 
 from langgraph.graph import StateGraph, END
 
-import redis_client
-from models import AgentId, AgentStatus, RiskActivatedEvent, ScenarioType
-from scenarios import SCENARIO_DEFINITIONS
+import db.redis_client as redis_client
+from core.models import AgentId, AgentStatus, RiskActivatedEvent, ScenarioType
+from core.scenarios import SCENARIO_DEFINITIONS
 from agents.base import (
     publish_state,
     publish_msg,

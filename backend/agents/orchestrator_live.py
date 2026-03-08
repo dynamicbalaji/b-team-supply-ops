@@ -41,19 +41,19 @@ import asyncio
 import time
 import json
 
-import redis_client
+import db.redis_client as redis_client
 import agents.logistics    as logistics_agent
 import agents.finance      as finance_agent
 import agents.procurement  as procurement_agent
 import agents.sales        as sales_agent
 import agents.risk         as risk_agent
 
-from models import (
+from core.models import (
     AgentId, AgentStatus, ScenarioType, RunStatus,
     PhaseEvent, AgentStateEvent, MessageEvent,
     ApprovalRequiredEvent, MapUpdateEvent,
 )
-from scenarios import SCENARIO_DEFINITIONS
+from core.scenarios import SCENARIO_DEFINITIONS
 from agents.base import publish_state, elapsed
 
 
@@ -320,7 +320,7 @@ async def _ARCHIVED_run_live_scenario(
 
         # ── Phase 3: Persist run context + new episodic memory ────────────
         try:
-            import turso_client
+            import db.turso_client as turso_client
             if turso_client.is_configured():
                 # 1. Save full run context (enables post-run analytics)
                 await turso_client.save_run_context(run_id, run_context)

@@ -59,16 +59,16 @@ from typing import Any, TypedDict
 
 from langgraph.graph import StateGraph, END
 
-import redis_client
-from models import (
+import db.redis_client as redis_client
+from core.models import (
     AgentId,
     AgentStatus,
     RunStatus,
     ScenarioType,
     ApprovalRequiredEvent,
 )
-from orchestrator import set_run_status
-from scenarios import SCENARIO_DEFINITIONS
+from api.orchestrator import set_run_status
+from core.scenarios import SCENARIO_DEFINITIONS
 from agents.base import elapsed, publish_state
 
 # Agent subgraph entry points — imported directly, bypassing shim layer
@@ -79,7 +79,7 @@ from graph.sales_agent_graph import run_sales_agent
 from graph.risk_agent_graph import run_risk_agent
 
 from agents.orchestrator_live import _orc_msg, _phase, _map, _safe_context_summary
-from audit_helpers import publish_audit_event
+from audit.audit_helpers import publish_audit_event
 from .state import RunGraphState
 
 
@@ -97,7 +97,7 @@ async def _phase0_broadcast(state: RunGraphState) -> RunGraphState:
 
     await _phase(run_id, 0, "done")
     await _phase(run_id, 1, "active")
-    from scenarios import _orchestrator_broadcast
+    from core.scenarios import _orchestrator_broadcast
     await _orc_msg(
         run_id,
         _orchestrator_broadcast(sc),
@@ -352,7 +352,7 @@ async def _awaiting_approval(state: RunGraphState) -> RunGraphState:
 
     # Persist run context + episodic memory to TursoDB (best-effort)
     try:
-        import turso_client
+        import db.turso_client as turso_client
         if turso_client.is_configured():
             await turso_client.save_run_context(run_id, run_context)
 
@@ -459,13 +459,13 @@ async def _exec_phase_transition(state: _CascadeState) -> _CascadeState:
 
 async def _exec_logistics_confirm(state: _CascadeState) -> _CascadeState:
     """Logistics: freight booking confirmation."""
-    from models import ExecutionEvent, AgentStatus, AgentId, AgentStateEvent
+    from core.models import ExecutionEvent, AgentStatus, AgentId, AgentStateEvent
     from agents.base import elapsed as _elapsed
 
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
-    from scenarios import _logistics_exec_message, SCENARIO_DEFINITIONS
+    from core.scenarios import _logistics_exec_message, SCENARIO_DEFINITIONS
     scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
     sc = SCENARIO_DEFINITIONS[scenario]
     await redis_client.publish(run_id, ExecutionEvent(
@@ -482,13 +482,13 @@ async def _exec_logistics_confirm(state: _CascadeState) -> _CascadeState:
 
 async def _exec_sales_notify(state: _CascadeState) -> _CascadeState:
     """Sales: customer notification confirmation."""
-    from models import ExecutionEvent, AgentStatus, AgentId
+    from core.models import ExecutionEvent, AgentStatus, AgentId
     from agents.base import elapsed as _elapsed
 
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
-    from scenarios import _sales_exec_message, SCENARIO_DEFINITIONS
+    from core.scenarios import _sales_exec_message, SCENARIO_DEFINITIONS
     scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
     sc = SCENARIO_DEFINITIONS[scenario]
     await redis_client.publish(run_id, ExecutionEvent(
@@ -505,13 +505,13 @@ async def _exec_sales_notify(state: _CascadeState) -> _CascadeState:
 
 async def _exec_finance_release(state: _CascadeState) -> _CascadeState:
     """Finance: budget release confirmation."""
-    from models import ExecutionEvent, AgentStatus, AgentId
+    from core.models import ExecutionEvent, AgentStatus, AgentId
     from agents.base import elapsed as _elapsed
 
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
-    from scenarios import _finance_exec_message, SCENARIO_DEFINITIONS
+    from core.scenarios import _finance_exec_message, SCENARIO_DEFINITIONS
     scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
     sc = SCENARIO_DEFINITIONS[scenario]
     cost = state.get("run_context", {}).get("finance", {}).get("hybrid_cost", 280_000) if state.get("run_context") else 280_000
@@ -529,13 +529,13 @@ async def _exec_finance_release(state: _CascadeState) -> _CascadeState:
 
 async def _exec_procurement_cancel(state: _CascadeState) -> _CascadeState:
     """Procurement: cancel spot order, schedule Tucson backup."""
-    from models import ExecutionEvent, AgentStatus, AgentId
+    from core.models import ExecutionEvent, AgentStatus, AgentId
     from agents.base import elapsed as _elapsed
 
     run_id     = state["run_id"]
     started_at = state.get("started_at") or time.time()
 
-    from scenarios import _procurement_last_message, SCENARIO_DEFINITIONS
+    from core.scenarios import _procurement_last_message, SCENARIO_DEFINITIONS
     scenario = state.get("scenario", ScenarioType.PORT_STRIKE)
     sc = SCENARIO_DEFINITIONS[scenario]
     await redis_client.publish(run_id, ExecutionEvent(
@@ -552,7 +552,7 @@ async def _exec_procurement_cancel(state: _CascadeState) -> _CascadeState:
 
 async def _exec_complete(state: _CascadeState) -> _CascadeState:
     """Final cascade node: phase 4 done → DELIVERED map → CompleteEvent."""
-    from models import CompleteEvent
+    from core.models import CompleteEvent
     from agents.base import elapsed as _elapsed
 
     run_id      = state["run_id"]
@@ -572,7 +572,7 @@ async def _exec_complete(state: _CascadeState) -> _CascadeState:
 
     # ── Persist metrics to _runs so the PDF endpoint can read them ────────
     try:
-        from orchestrator import _runs
+        from api.orchestrator import _runs
         if run_id in _runs:
             _runs[run_id]["cost_usd"]        = cost_usd
             _runs[run_id]["saved_usd"]       = saved_usd
@@ -594,7 +594,7 @@ async def _exec_complete(state: _CascadeState) -> _CascadeState:
         message_count=9,
     ).model_dump())
     # ── Audit: Approved & executed ────────────────────────────────────────
-    from audit_helpers import publish_audit_event as _pae
+    from audit.audit_helpers import publish_audit_event as _pae
     saved_k = saved_usd // 1000
     cost_k  = cost_usd  // 1000
     await _pae(

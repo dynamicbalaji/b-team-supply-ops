@@ -12,7 +12,7 @@ each run feels slightly different without any external API.
 
 import random
 import asyncio
-from models import ScenarioType
+from core.models import ScenarioType
 
 
 # ── Freight rate catalog ─────────────────────────────────────────────────
@@ -183,7 +183,7 @@ async def memory_recall(query: str) -> dict | None:
 
     # ── Phase 3: TursoDB lookup ────────────────────────────────────────────
     try:
-        import turso_client
+        import db.turso_client as turso_client
         if turso_client.is_configured():
             query_lower = query.lower()
             # Extract candidate keywords for DB LIKE search

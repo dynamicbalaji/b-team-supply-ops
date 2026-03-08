@@ -14,7 +14,7 @@ Each step is a dict:
   event    : dict  — the SSE event payload (matches models.py shapes)
 """
 
-from models import (
+from core.models import (
     ScenarioType, ScenarioDefinition, AgentId, AgentStatus,
     PhaseEvent, AgentStateEvent, MessageEvent, ToolEvent,
     RiskActivatedEvent, ApprovalRequiredEvent, MapUpdateEvent,

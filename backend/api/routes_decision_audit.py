@@ -46,11 +46,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-import redis_client
-import orchestrator
-from models import ScenarioType
-from scenarios import SCENARIO_DEFINITIONS
-from audit_pdf import generate_audit_pdf
+import db.redis_client as redis_client
+import api.orchestrator as orchestrator
+from core.models import ScenarioType
+from core.scenarios import SCENARIO_DEFINITIONS
+from audit.audit_pdf import generate_audit_pdf
 
 log = logging.getLogger("resolveiq.routes.decision_audit")
 
@@ -115,7 +115,7 @@ def _build_options_from_context(run_context: dict, scenario_str: str) -> list[di
     (e.g. early in the run, before all agents have written their outputs).
     """
     from tools.freight import _FREIGHT_CATALOG, check_freight_rates
-    from models import ScenarioType
+    from core.models import ScenarioType
 
     try:
         sc_type = ScenarioType(scenario_str)
@@ -404,7 +404,7 @@ async def get_decision_matrix(run_id: str):
         run = await redis_client.get_run_state(run_id)
     if not run:
         try:
-            import turso_client
+            import db.turso_client as turso_client
             if turso_client.is_configured():
                 run = await turso_client.get_run(run_id)
         except Exception:
@@ -482,7 +482,7 @@ async def get_audit_trail(run_id: str):
         run = await redis_client.get_run_state(run_id)
     if not run:
         try:
-            import turso_client
+            import db.turso_client as turso_client
             if turso_client.is_configured():
                 run = await turso_client.get_run(run_id)
         except Exception:
@@ -524,7 +524,7 @@ async def export_audit_trail_pdf(run_id: str):
         run = await redis_client.get_run_state(run_id)
     if not run:
         try:
-            import turso_client
+            import db.turso_client as turso_client
             if turso_client.is_configured():
                 run = await turso_client.get_run(run_id)
         except Exception:
@@ -629,7 +629,7 @@ async def list_episodic_memory(
 
     Falls back to in-memory seed data when TursoDB is not configured.
     """
-    import turso_client
+    import db.turso_client as turso_client
     memories = await turso_client.list_all_memories(sort_by=sort_by, order=order)
     return {
         "total":    len(memories),

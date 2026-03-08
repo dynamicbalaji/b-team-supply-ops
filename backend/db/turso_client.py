@@ -35,7 +35,7 @@ import logging
 import asyncio
 from typing import Any
 
-from config import get_settings
+from core.config import get_settings
 
 log = logging.getLogger("resolveiq.turso")
 
