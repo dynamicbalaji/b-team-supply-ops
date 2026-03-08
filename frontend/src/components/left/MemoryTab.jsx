@@ -62,10 +62,22 @@ function fmt(n) {
   return `$${n}`
 }
 
+// CSS variable shorthands — avoids repeating var(--xxx) everywhere
+const V = {
+  sur:  'var(--sur)',
+  s2:   'var(--s2)',
+  bdr:  'var(--bdr)',
+  b2:   'var(--b2)',
+  t1:   'var(--t1)',
+  t2:   'var(--t2)',
+  t3:   'var(--t3)',
+  acc:  'var(--acc)',
+}
+
 function SortIcon({ col, sortBy, order }) {
-  if (sortBy !== col) return <span style={{ color: '#1d2d40', marginLeft: 3 }}>⇅</span>
+  if (sortBy !== col) return <span style={{ color: V.bdr, marginLeft: 3 }}>⇅</span>
   return (
-    <span style={{ color: '#00d4ff', marginLeft: 3 }}>
+    <span style={{ color: V.acc, marginLeft: 3 }}>
       {order === 'desc' ? '↓' : '↑'}
     </span>
   )
@@ -79,8 +91,8 @@ function MemorySkeleton() {
           key={i}
           style={{
             opacity: op,
-            background: '#111820',
-            border: '1px solid #1d2d40',
+            background: V.s2,
+            border: `1px solid ${V.bdr}`,
             borderRadius: 6,
             padding: '10px 12px',
             marginBottom: 8,
@@ -88,9 +100,9 @@ function MemorySkeleton() {
             gap: 10,
           }}
         >
-          <div style={{ width: 80, height: 9, background: '#1a3a52', borderRadius: 3 }} />
-          <div style={{ width: 90, height: 9, background: '#1a3a52', borderRadius: 3 }} />
-          <div style={{ flex: 1, height: 9, background: '#0d2233', borderRadius: 3 }} />
+          <div style={{ width: 80, height: 9, background: V.bdr, borderRadius: 3 }} />
+          <div style={{ width: 90, height: 9, background: V.bdr, borderRadius: 3 }} />
+          <div style={{ flex: 1,  height: 9, background: V.s2,  borderRadius: 3 }} />
         </div>
       ))}
     </div>
@@ -112,71 +124,47 @@ function MemoryCard({ mem, idx, animKey }) {
 
   return (
     <div
+      className="mem-card"
       style={{
         opacity:    visible ? 1 : 0,
         transform:  visible ? 'translateY(0)' : 'translateY(8px)',
         transition: `opacity 0.35s ease ${idx * 0.06}s, transform 0.35s ease ${idx * 0.06}s`,
-        background: '#111820',
-        border:     `1px solid #1d2d40`,
         borderLeft: `3px solid ${color}`,
-        borderRadius: 6,
-        marginBottom: 8,
-        cursor: 'pointer',
-        overflow: 'hidden',
       }}
       onClick={() => setExpanded(e => !e)}
     >
       {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px' }}>
+      <div className="mem-card-row">
         {/* Date */}
-        <div style={{
-          fontFamily: "'JetBrains Mono',monospace",
-          fontSize: 10,
-          color: '#3d5a72',
-          minWidth: 88,
-          flexShrink: 0,
-          title: mem.date || '',
-        }}>
-          {formatDate(mem.date)}
-        </div>
+        <div className="mem-date">{formatDate(mem.date)}</div>
 
         {/* Scenario badge */}
         <div style={{
-          background: `${color}18`,
-          border: `1px solid ${color}44`,
+          background:   `${color}18`,
+          border:       `1px solid ${color}55`,
           borderRadius: 3,
-          padding: '2px 7px',
-          fontSize: 9,
-          fontWeight: 700,
+          padding:      '2px 7px',
+          fontSize:     9,
+          fontWeight:   700,
           color,
-          fontFamily: "'JetBrains Mono',monospace",
-          flexShrink: 0,
-          minWidth: 100,
-          textAlign: 'center',
+          fontFamily:   "'JetBrains Mono',monospace",
+          flexShrink:   0,
+          minWidth:     100,
+          textAlign:    'center',
         }}>
           {SCENARIO_LABELS[mem.scenario_type] || mem.scenario_type}
         </div>
 
         {/* Crisis summary */}
-        <div style={{
-          flex: 1,
-          fontSize: 10,
-          color: '#7aa0be',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          fontFamily: "'JetBrains Mono',monospace",
-        }}>
-          {mem.crisis}
-        </div>
+        <div className="mem-crisis">{mem.crisis}</div>
 
         {/* Cost */}
         <div style={{
           fontFamily: "'JetBrains Mono',monospace",
-          fontSize: 10,
-          color: '#ff3b5c',
-          minWidth: 60,
-          textAlign: 'right',
+          fontSize:   10,
+          color:      '#ff3b5c',
+          minWidth:   60,
+          textAlign:  'right',
           flexShrink: 0,
         }}>
           {fmt(mem.cost_usd || 0)}
@@ -185,10 +173,10 @@ function MemoryCard({ mem, idx, animKey }) {
         {/* Saved */}
         <div style={{
           fontFamily: "'JetBrains Mono',monospace",
-          fontSize: 10,
-          color: '#39d98a',
-          minWidth: 60,
-          textAlign: 'right',
+          fontSize:   10,
+          color:      '#39d98a',
+          minWidth:   60,
+          textAlign:  'right',
           flexShrink: 0,
         }}>
           +{fmt(mem.saved_usd || 0)}
@@ -197,32 +185,24 @@ function MemoryCard({ mem, idx, animKey }) {
         {/* Confidence */}
         <div style={{
           fontFamily: "'JetBrains Mono',monospace",
-          fontSize: 10,
-          color: confPct >= 90 ? '#39d98a' : confPct >= 80 ? '#ffb340' : '#ff3b5c',
-          minWidth: 42,
-          textAlign: 'right',
+          fontSize:   10,
+          color:      confPct >= 90 ? '#39d98a' : confPct >= 80 ? '#ffb340' : '#ff3b5c',
+          minWidth:   42,
+          textAlign:  'right',
           flexShrink: 0,
         }}>
           {confPct}%
         </div>
 
         {/* Expand chevron */}
-        <div style={{ color: '#3d5a72', fontSize: 10, marginLeft: 4, flexShrink: 0 }}>
-          {expanded ? '▲' : '▼'}
-        </div>
+        <div className="mem-chevron">{expanded ? '▲' : '▼'}</div>
       </div>
 
       {/* Expanded detail */}
       {expanded && (
-        <div style={{
-          borderTop: '1px solid #1d2d40',
-          padding: '10px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 7,
-        }}>
-          <DetailRow label="Decision" value={mem.decision} color="#00d4ff" />
-          <DetailRow label="Outcome"  value={mem.outcome}  color="#39d98a" />
+        <div className="mem-card-detail">
+          <DetailRow label="Decision" value={mem.decision}     color="#00d4ff" />
+          <DetailRow label="Outcome"  value={mem.outcome}      color="#39d98a" />
           <DetailRow label="Learning" value={mem.key_learning} color="#ffb340" />
         </div>
       )}
@@ -233,24 +213,8 @@ function MemoryCard({ mem, idx, animKey }) {
 function DetailRow({ label, value, color }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <div style={{
-        fontFamily: "'JetBrains Mono',monospace",
-        fontSize: 9,
-        color: '#3d5a72',
-        textTransform: 'uppercase',
-        letterSpacing: '0.8px',
-        minWidth: 62,
-        paddingTop: 1,
-        flexShrink: 0,
-      }}>
-        {label}
-      </div>
-      <div style={{
-        fontSize: 10,
-        color: color || '#7aa0be',
-        lineHeight: 1.5,
-        fontFamily: "'JetBrains Mono',monospace",
-      }}>
+      <div className="mem-detail-lbl">{label}</div>
+      <div className="mem-detail-val" style={{ color: color || V.t2 }}>
         {value || '—'}
       </div>
     </div>
@@ -260,60 +224,36 @@ function DetailRow({ label, value, color }) {
 // Sort controls header
 function SortHeader({ sortBy, order, onSort }) {
   const sortableCols = ['date_label', 'scenario_type', 'cost_usd', 'saved_usd', 'confidence']
+  const labels = {
+    date_label:    'Date',
+    scenario_type: 'Scenario',
+    cost_usd:      'Cost',
+    saved_usd:     'Saved',
+    confidence:    'Confidence',
+  }
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 4,
-      marginBottom: 10,
-      paddingBottom: 8,
-      borderBottom: '1px solid #1d2d40',
-      flexWrap: 'wrap',
-    }}>
+    <div className="mem-sort-hdr">
       <span style={{
-        fontFamily: "'JetBrains Mono',monospace",
-        fontSize: 9,
-        color: '#3d5a72',
+        fontFamily:    "'JetBrains Mono',monospace",
+        fontSize:      9,
+        color:         V.t3,
         textTransform: 'uppercase',
         letterSpacing: '1px',
-        marginRight: 4,
+        marginRight:   4,
       }}>
         Sort:
       </span>
-      {sortableCols.map(col => {
-        const labels = {
-          date_label:    'Date',
-          scenario_type: 'Scenario',
-          cost_usd:      'Cost',
-          saved_usd:     'Saved',
-          confidence:    'Confidence',
-        }
-        const active = sortBy === col
-        return (
-          <button
-            key={col}
-            onClick={() => onSort(col)}
-            style={{
-              background:  active ? 'rgba(0,212,255,0.1)' : '#111820',
-              border:      `1px solid ${active ? '#00d4ff' : '#1d2d40'}`,
-              borderRadius: 4,
-              padding:     '3px 8px',
-              fontSize:    9,
-              color:       active ? '#00d4ff' : '#3d5a72',
-              cursor:      'pointer',
-              fontFamily:  "'JetBrains Mono',monospace",
-              display:     'flex',
-              alignItems:  'center',
-              gap:         2,
-              transition:  'all 0.15s',
-            }}
-          >
-            {labels[col]}
-            <SortIcon col={col} sortBy={sortBy} order={order} />
-          </button>
-        )
-      })}
+      {sortableCols.map(col => (
+        <button
+          key={col}
+          className={`mem-sort-btn${sortBy === col ? ' active' : ''}`}
+          onClick={() => onSort(col)}
+        >
+          {labels[col]}
+          <SortIcon col={col} sortBy={sortBy} order={order} />
+        </button>
+      ))}
     </div>
   )
 }
@@ -391,13 +331,7 @@ export default function MemoryTab() {
       <SortHeader sortBy={sortBy} order={order} onSort={handleSort} />
 
       {/* Column labels */}
-      <div style={{
-        display: 'flex',
-        gap: 8,
-        padding: '0 11px 6px',
-        borderBottom: '1px solid #1d2d40',
-        marginBottom: 8,
-      }}>
+      <div className="mem-col-hdrs">
         {[
           { label: 'Date',     w: 88  },
           { label: 'Scenario', w: 108 },
@@ -409,12 +343,8 @@ export default function MemoryTab() {
         ].map(({ label, w }, i) => (
           <div
             key={i}
+            className="mem-col-hdr"
             style={{
-              fontFamily: "'JetBrains Mono',monospace",
-              fontSize: 8,
-              color: '#3d5a72',
-              textTransform: 'uppercase',
-              letterSpacing: '0.8px',
               ...(w ? { minWidth: w, flexShrink: 0 } : { flex: 1 }),
               textAlign: i >= 3 ? 'right' : 'left',
             }}
@@ -428,24 +358,24 @@ export default function MemoryTab() {
       {loading && memories.length === 0 && (
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'160px', gap:'12px' }}>
           <img src="/shield-icon.png" alt="Loading" className="loading-shield-icon" />
-          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#3d5a72' }}>Loading memories…</div>
+          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color: V.t3 }}>Loading memories…</div>
         </div>
       )}
 
       {/* Error state */}
       {error && !loading && (
         <div style={{
-          background: 'rgba(255,59,92,0.08)',
-          border: '1px solid rgba(255,59,92,0.25)',
+          background:   'rgba(255,59,92,0.08)',
+          border:       '1px solid rgba(255,59,92,0.25)',
           borderRadius: 6,
-          padding: '12px 14px',
-          fontSize: 10,
-          color: '#ff3b5c',
-          fontFamily: "'JetBrains Mono',monospace",
+          padding:      '12px 14px',
+          fontSize:     10,
+          color:        '#ff3b5c',
+          fontFamily:   "'JetBrains Mono',monospace",
         }}>
           ⚠ Could not load memories: {error}
           <br />
-          <span style={{ color: '#3d5a72', fontSize: 9 }}>
+          <span style={{ color: V.t3, fontSize: 9 }}>
             Check that the backend is running and TursoDB is configured.
           </span>
         </div>
@@ -454,19 +384,19 @@ export default function MemoryTab() {
       {/* Empty state */}
       {!loading && !error && memories.length === 0 && (
         <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
+          display:        'flex',
+          flexDirection:  'column',
+          alignItems:     'center',
           justifyContent: 'center',
-          height: 180,
-          gap: 10,
-          opacity: 0.35,
+          height:         180,
+          gap:            10,
+          opacity:        0.35,
         }}>
           <img src="/shield-icon.png" alt="" className="empty-shield-icon" />
           <div style={{
             fontFamily: "'JetBrains Mono',monospace",
-            fontSize: 11,
-            color: '#3d5a72',
+            fontSize:   11,
+            color:      V.t3,
           }}>
             No episodic memories found
           </div>
@@ -485,26 +415,11 @@ export default function MemoryTab() {
 
       {/* Legend */}
       {memories.length > 0 && (
-        <div style={{
-          marginTop: 12,
-          paddingTop: 10,
-          borderTop: '1px solid #1d2d40',
-          display: 'flex',
-          gap: 14,
-          flexWrap: 'wrap',
-        }}>
+        <div className="mem-legend">
           {Object.entries(SCENARIO_COLORS).map(([k, c]) => (
             <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 8, height: 8, borderRadius: 2, background: c }} />
-              <span style={{
-                fontFamily: "'JetBrains Mono',monospace",
-                fontSize: 8,
-                color: '#3d5a72',
-                textTransform: 'uppercase',
-                letterSpacing: '0.8px',
-              }}>
-                {SCENARIO_LABELS[k]}
-              </span>
+              <span className="mem-legend-label">{SCENARIO_LABELS[k]}</span>
             </div>
           ))}
         </div>
