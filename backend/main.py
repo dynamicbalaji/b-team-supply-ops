@@ -4,12 +4,14 @@ main.py
 FastAPI application — Phase 1: Foundation
 
 Routes:
-  GET  /health                        Health check (Redis ping)
-  GET  /api/scenarios                 List available scenarios
-  POST /api/runs                      Start a new scenario run
-  GET  /api/runs/{run_id}             Get run state
-  GET  /api/stream/{run_id}           SSE stream (EventSource connects here)
-  POST /api/runs/{run_id}/approve     Human approves the AI recommendation
+  GET  /health                              Health check (Redis ping)
+  GET  /api/scenarios                       List available scenarios
+  POST /api/runs                            Start a new scenario run
+  GET  /api/runs/{run_id}                   Get run state
+  GET  /api/runs/{run_id}/decision-matrix   Live decision matrix (options + MC stats)
+  GET  /api/runs/{run_id}/audit-trail       Ordered audit trail for a run
+  GET  /api/stream/{run_id}                 SSE stream (EventSource connects here)
+  POST /api/runs/{run_id}/approve           Human approves the AI recommendation
   GET  /agents/{name}/.well-known/agent.json   A2A agent cards
 
 Run locally:
@@ -37,6 +39,7 @@ from models import (
 )
 from scenarios import SCENARIO_DEFINITIONS
 from sse import stream_run
+from routes_decision_audit import router as decision_audit_router
 
 settings = get_settings()
 
@@ -146,6 +149,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(decision_audit_router, prefix="/api")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

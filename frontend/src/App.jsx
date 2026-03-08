@@ -301,6 +301,7 @@ export default function App() {
           costSaved={state.costSaved}
           isRunning={state.isRunning}
           approvalData={state.approvalData}
+          runId={state.runId}
         />
         <RightPanel
           agents={agents} riskAgent={riskAgent}

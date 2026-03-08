@@ -456,6 +456,29 @@ async def update_run_status(run_id: str, status: str) -> bool:
         return False
 
 
+async def set_run_approved(run_id: str) -> bool:
+    """
+    Flip approved = 1 on a run row.
+
+    Called when the human clicks APPROVE in the frontend.
+    Kept separate from update_run_status so the approved flag is an
+    explicit, auditable write — not bundled silently with a status change.
+    """
+    client = _get_client()
+    if client is None:
+        return False
+    try:
+        async with client as c:
+            await c.execute(
+                "UPDATE runs SET approved = 1, updated_at = datetime('now') WHERE run_id = ?",
+                [run_id],
+            )
+        return True
+    except Exception as exc:
+        log.error("TursoDB set_run_approved failed: %s", exc)
+        return False
+
+
 async def save_run_context(run_id: str, context: dict) -> bool:
     """Persist the full run_context dict for post-run analysis."""
     client = _get_client()
