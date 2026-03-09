@@ -14,9 +14,20 @@
 
 ---
 
+## 🎬 Demo Video
+
+[![ChainGuardAI Demo](https://img.shields.io/badge/YouTube-Demo%20Video-red?style=flat-square&logo=youtube)](https://www.youtube.com/watch?v=hWG2RByWmlg)
+
+**[▶ Watch the full demo on YouTube](https://www.youtube.com/watch?v=hWG2RByWmlg)**
+
+Watch 5 AI agents deliberate, challenge each other, and resolve a $2M supply chain crisis in under 5 minutes — with one human approval and a full audit trail.
+
+---
+
 ## Table of Contents
 
 - [🛡️ Autonomous Supply Chain Crisis Command 🛡️](#️-autonomous-supply-chain-crisis-command-️)
+  - [🎬 Demo Video](#-demo-video)
   - [Table of Contents](#table-of-contents)
   - [The Problem We're Solving](#the-problem-were-solving)
   - [What ChainGuardAI Does](#what-chainguardai-does)
